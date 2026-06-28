@@ -2255,7 +2255,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     dominant_focus = emotions.get("dominant_focus", "")
     dominant_str = f"Твоя когнитивная доминанта: '{dominant_focus}'" if dominant_focus else ""
 
-    opponent_name = user.get("opponent_name", "Руслан")
+    opponent_name = user.get("opponent_name") or "Руслан"
 
     raw_thought_prompt = (
         f"Ты — скрытый внутренний голос Алекса. Твоя задача — сгенерировать его истинную невербальную реакцию на реплику {opponent_name}.\n"
