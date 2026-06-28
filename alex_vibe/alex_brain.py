@@ -127,6 +127,7 @@ def trigger_api_cooldown():
 def call_openrouter_chat(messages: list, model: str = "openrouter/free", temperature: float = 0.8, max_tokens: int = None):
     """
     Sends a chat completion request to OpenRouter API.
+    Supports a list of fallback models if "openrouter/free" is selected.
     """
     if not OPENROUTER_API_KEY:
         logger.error("OPENROUTER_API_KEY is not set.")
@@ -139,41 +140,58 @@ def call_openrouter_chat(messages: list, model: str = "openrouter/free", tempera
         "X-Title": "Project Erebus Alex Core",
     }
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-    }
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
+    if model == "openrouter/free":
+        models_to_try = [
+            "google/gemma-2-9b-it:free",
+            "qwen/qwen-2-7b-instruct:free",
+            "meta-llama/llama-3-8b-instruct:free",
+            "openrouter/free"
+        ]
+    else:
+        models_to_try = [model]
 
     import httpx
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            # Mock structure compatible with Groq/OpenAI response format
-            class MockMessage:
-                def __init__(self, content):
-                    self.content = content
-            class MockChoice:
-                def __init__(self, content):
-                    self.message = MockMessage(content)
-            class MockCompletion:
-                def __init__(self, content):
-                    self.choices = [MockChoice(content)]
-            
-            content = data["choices"][0]["message"]["content"]
-            return MockCompletion(content)
-    except Exception as e:
-        logger.error(f"OpenRouter API call failed: {e}")
-        raise e
+    last_err = None
+
+    for candidate in models_to_try:
+        payload = {
+            "model": candidate,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # Mock structure compatible with Groq/OpenAI response format
+                class MockMessage:
+                    def __init__(self, content):
+                        self.content = content
+                class MockChoice:
+                    def __init__(self, content):
+                        self.message = MockMessage(content)
+                class MockCompletion:
+                    def __init__(self, content):
+                        self.choices = [MockChoice(content)]
+                
+                content = data["choices"][0]["message"]["content"]
+                logger.info(f"OpenRouter call succeeded using candidate model: {candidate}")
+                return MockCompletion(content)
+        except Exception as e:
+            logger.warning(f"OpenRouter candidate model {candidate} failed: {e}. Trying next...")
+            last_err = e
+
+    logger.error("All OpenRouter candidate models failed.")
+    raise last_err
 
 def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None):
     primary = groq_client_primary
