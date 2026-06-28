@@ -2569,10 +2569,17 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         temperature=0.8,
     )
-    response = chat_completion.choices[0].message.content
+    response = None
+    if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
+        response = chat_completion.choices[0].message.content
+
+    if response is None:
+        response = "Извини, мои мысли сейчас немного спутались. Можешь повторить?"
+        
+    response = response.strip()
     
     # Support active web search intercept
-    search_match = re.match(r'^\[SEARCH:\s*["\'](.*?)["\']\]', response.strip(), re.IGNORECASE)
+    search_match = re.match(r'^\[SEARCH:\s*["\'](.*?)["\']\]', response, re.IGNORECASE)
     if search_match:
         query = search_match.group(1).strip()
         logger.info(f"Alex triggered live search during chat: {query}")
@@ -2596,10 +2603,15 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.8,
         )
-        response = chat_completion.choices[0].message.content
+        response = None
+        if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
+            response = chat_completion.choices[0].message.content
+        if response is None:
+            response = "Не удалось обработать результаты поиска."
 
     # Support cross-user message sending intercept
-    send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN):\s*["\'](.*?)["\']\]', response.strip(), re.DOTALL | re.IGNORECASE)
+    response = response.strip() if response else ""
+    send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN):\s*["\'](.*?)["\']\]', response, re.DOTALL | re.IGNORECASE)
     if send_match:
         target_name = send_match.group(1).upper()
         msg_text = send_match.group(2).strip()
