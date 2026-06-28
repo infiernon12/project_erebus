@@ -233,9 +233,24 @@ def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0
                 )
             else:
                 # If we've exhausted all Groq models, check if OpenRouter is available
-                # All Groq models failed, trigger cooldown immediately
-                trigger_api_cooldown()
-                raise e
+                if OPENROUTER_API_KEY:
+                    # Try to fall back to the paid counterpart on OpenRouter
+                    or_model = "meta-llama/llama-4-scout-17b-16e-instruct"
+                    if current_model == "llama-3.3-70b-versatile":
+                        or_model = "meta-llama/llama-3.3-70b-instruct"
+                    elif current_model == "llama-3.1-8b-instant":
+                        or_model = "meta-llama/llama-3.1-8b-instruct"
+                    
+                    logger.warning(f"All Groq models failed. Falling back to OpenRouter paid model {or_model}...")
+                    try:
+                        return call_openrouter_chat(messages, or_model, temperature, max_tokens)
+                    except Exception as ore:
+                        logger.error(f"OpenRouter fallback to {or_model} also failed: {ore}")
+                        trigger_api_cooldown()
+                        raise e
+                else:
+                    trigger_api_cooldown()
+                    raise e
 
 ROM_IDENTITY_CONSTANTS = (
     "Мое имя — Алекс. Я — оцифрованное сознание реального человека.\n"

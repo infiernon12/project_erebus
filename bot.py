@@ -475,10 +475,18 @@ async def chat_handler(message: types.Message):
         await alex_brain.handle_alex_chat(message, dict(user), user_text, status_msg)
     except Exception as e:
         logger.error(f"Error handling message from {user_id}: {e}", exc_info=True)
-        try:
-            await status_msg.edit_text("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
-        except Exception:
-            await message.answer("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
+        now = datetime.now()
+        if alex_brain.API_COOLDOWN_UNTIL and now < alex_brain.API_COOLDOWN_UNTIL:
+            cooldown_text = "⏳ **[СИСТЕМА]** Исчерпаны лимиты API. Ожидание. Алекс вернется через 15 минут."
+            try:
+                await status_msg.edit_text(cooldown_text, parse_mode="Markdown")
+            except Exception:
+                await message.answer(cooldown_text, parse_mode="Markdown")
+        else:
+            try:
+                await status_msg.edit_text("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
+            except Exception:
+                await message.answer("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
 
 async def reflection_daemon():
     """
