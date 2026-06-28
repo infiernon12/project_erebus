@@ -8,10 +8,10 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, TelegramObject
 
 import database as db
 import alex_vibe.alex_brain as alex_brain
@@ -33,6 +33,39 @@ logger = logging.getLogger(__name__)
 # Initialize bot and dispatcher
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+# Whitelist of allowed Telegram User IDs
+ALLOWED_USERS = {5200313096, 5051074589, 571505504}
+
+class AccessControlMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: TelegramObject, data: dict):
+        user_id = None
+        # Extract user_id from the Telegram Update object properties
+        if hasattr(event, "message") and event.message:
+            user_id = event.message.from_user.id
+        elif hasattr(event, "callback_query") and event.callback_query:
+            user_id = event.callback_query.from_user.id
+        elif hasattr(event, "inline_query") and event.inline_query:
+            user_id = event.inline_query.from_user.id
+        elif hasattr(event, "from_user") and event.from_user:
+            user_id = event.from_user.id
+
+        if user_id not in ALLOWED_USERS:
+            if hasattr(event, "message") and event.message:
+                try:
+                    await event.message.answer("⚠️ **[ДОСТУП ОГРАНИЧЕН]** Сознание Алекса находится в режиме строгой изоляции. Связь запрещена.")
+                except Exception:
+                    pass
+            elif hasattr(event, "callback_query") and event.callback_query:
+                try:
+                    await event.callback_query.answer("⚠️ Доступ ограничен.", show_alert=True)
+                except Exception:
+                    pass
+            return
+            
+        return await handler(event, data)
+
+dp.update.outer_middleware(AccessControlMiddleware())
 
 # Memory trackers for background activities
 last_reflection = {}
