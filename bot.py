@@ -493,12 +493,7 @@ async def reflection_daemon():
             continue
             
         try:
-            # Fetch all registered users
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT user_id FROM users")
-                user_ids = [row["user_id"] for row in cursor.fetchall() if row["user_id"] in ALLOWED_USERS]
-                
+            user_ids = [db.GLOBAL_ALEX_ID]
             for user_id in user_ids:
                 emotions = db.get_alex_emotions(user_id)
                 if not emotions or not emotions.get("last_interaction"):

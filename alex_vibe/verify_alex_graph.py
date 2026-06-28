@@ -14,6 +14,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database as db
+db.TESTING = True
 import alex_vibe.alex_brain as alex_brain
 
 # Global test variables

@@ -2,6 +2,8 @@ import sqlite3
 import os
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
+GLOBAL_ALEX_ID = 571505504
+TESTING = False
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -223,6 +225,8 @@ def clear_chat_history(user_id: int):
         conn.commit()
 
 def get_alex_emotions(user_id: int) -> dict:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -258,6 +262,8 @@ def get_alex_emotions(user_id: int) -> dict:
         }
 
 def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: str):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute(
             "UPDATE alex_emotions SET expected_return = ?, leave_reason = ? WHERE user_id = ?",
@@ -266,6 +272,8 @@ def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: s
         conn.commit()
 
 def update_alex_dominant(user_id: int, focus: str, strength: float):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute(
             "UPDATE alex_emotions SET dominant_focus = ?, dominant_strength = ? WHERE user_id = ?",
@@ -274,11 +282,15 @@ def update_alex_dominant(user_id: int, focus: str, strength: float):
         conn.commit()
 
 def set_alex_last_dream(user_id: int, last_dream: str):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute("UPDATE alex_emotions SET last_dream = ? WHERE user_id = ?", (last_dream, user_id))
         conn.commit()
 
 def clear_alex_last_dream(user_id: int):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute("UPDATE alex_emotions SET last_dream = NULL WHERE user_id = ?", (user_id,))
         conn.commit()
@@ -318,6 +330,8 @@ def update_alex_emotions_and_fatigue(
     fatigue_delta: float,
     trigger_text: str = ""
 ):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     current = get_alex_emotions(user_id)
     
     new_da = current["dopamine"] + dopamine_delta
@@ -369,6 +383,8 @@ def update_alex_emotions_and_fatigue(
         conn.commit()
 
 def set_alex_fatigue(user_id: int, value: float):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     get_alex_emotions(user_id)
     new_val = max(0.0, min(100.0, value))
     with get_connection() as conn:
@@ -376,6 +392,8 @@ def set_alex_fatigue(user_id: int, value: float):
         conn.commit()
 
 def update_last_interaction(user_id: int):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute("UPDATE alex_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (user_id,))
         conn.commit()
@@ -405,6 +423,8 @@ def clear_alex_stm(user_id: int):
         conn.commit()
 
 def add_ltm_node(user_id: int, memory_text: str, embedding: str, memory_type: str, strength: float = 1.0, rigidity: float = 0.5, source: str = 'ego', verified: int = 1) -> int:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.execute(
             """INSERT INTO alex_ltm_nodes (user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified)
@@ -415,6 +435,8 @@ def add_ltm_node(user_id: int, memory_text: str, embedding: str, memory_type: st
         return cursor.lastrowid
 
 def get_ltm_nodes_by_user(user_id: int) -> list[dict]:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -451,6 +473,8 @@ def delete_ltm_node(node_id: int):
         conn.commit()
 
 def add_ltm_edge(user_id: int, source_id: int, target_id: int, weight: float = 0.5, association_type: str = 'semantic') -> int:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.execute(
             """INSERT INTO alex_ltm_edges (user_id, source_id, target_id, weight, association_type)
@@ -461,6 +485,8 @@ def add_ltm_edge(user_id: int, source_id: int, target_id: int, weight: float = 0
         return cursor.lastrowid
 
 def get_ltm_edges_by_user(user_id: int) -> list[dict]:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -490,6 +516,8 @@ def delete_ltm_edge(edge_id: int):
         conn.commit()
 
 def add_weak_flow_thought(user_id: int, thought: str) -> int:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.execute(
             "INSERT INTO alex_weak_flow (user_id, thought) VALUES (?, ?)",
@@ -499,6 +527,8 @@ def add_weak_flow_thought(user_id: int, thought: str) -> int:
         return cursor.lastrowid
 
 def add_thought_history(user_id: int, thought: str, thought_type: str):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO alex_thought_history (user_id, thought, thought_type) VALUES (?, ?, ?)",
@@ -507,6 +537,8 @@ def add_thought_history(user_id: int, thought: str, thought_type: str):
         conn.commit()
 
 def get_thought_history(user_id: int, limit: int = 10) -> list[dict]:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -516,6 +548,8 @@ def get_thought_history(user_id: int, limit: int = 10) -> list[dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 def get_weak_flow_thoughts(user_id: int, limit: int = 5) -> list[str]:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -525,11 +559,15 @@ def get_weak_flow_thoughts(user_id: int, limit: int = 5) -> list[str]:
         return [row["thought"] for row in cursor.fetchall()]
 
 def clear_weak_flow_thoughts(user_id: int):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         conn.execute("DELETE FROM alex_weak_flow WHERE user_id = ?", (user_id,))
         conn.commit()
 
 def add_alex_hypothesis(user_id: int, hypothesis_text: str, confidence: float = 0.5) -> int:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.execute(
             "INSERT INTO alex_hypotheses (user_id, hypothesis_text, confidence) VALUES (?, ?, ?)",
@@ -539,6 +577,8 @@ def add_alex_hypothesis(user_id: int, hypothesis_text: str, confidence: float = 
         return cursor.lastrowid
 
 def get_alex_hypotheses(user_id: int, status: str = None) -> list[dict]:
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         if status:
