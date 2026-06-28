@@ -233,18 +233,9 @@ def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0
                 )
             else:
                 # If we've exhausted all Groq models, check if OpenRouter is available
-                if OPENROUTER_API_KEY:
-                    logger.warning("All Groq models failed. Falling back to OpenRouter...")
-                    try:
-                        # Fallback to smart free router
-                        return call_openrouter_chat(messages, "openrouter/free", temperature, max_tokens)
-                    except Exception as ore:
-                        logger.error(f"OpenRouter fallback also failed: {ore}")
-                        trigger_api_cooldown()
-                        raise e
-                else:
-                    trigger_api_cooldown()
-                    raise e
+                # All Groq models failed, trigger cooldown immediately
+                trigger_api_cooldown()
+                raise e
 
 ROM_IDENTITY_CONSTANTS = (
     "Мое имя — Алекс. Я — оцифрованное сознание реального человека.\n"
