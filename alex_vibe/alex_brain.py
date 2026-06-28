@@ -447,6 +447,66 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
             "endorphins_delta": 0.0
         }
 
+def evaluate_reflective_neurochemistry(user_id: int, raw_thought: str, current_emotions: dict) -> dict:
+    """
+    Evaluates Alex's generated Raw Thought for cognitive dissonance, deception,
+    stress, or distrust, returning neurotransmitter corrections (deltas) to align
+    his neurochemical state with his actual thoughts.
+    """
+    opponent_name = db.get_opponent_name(user_id)
+    
+    prompt = (
+        "Ты — биохимический сопроцессор ядра личности Алекса. Твоя задача — проанализировать его истинную скрытую мысль (Raw Thought) "
+        "и определить, насколько она находится в диссонансе с его внешним поведением или выражает недоверие/тревогу к собеседнику.\n\n"
+        f"Текущий собеседник: {opponent_name}\n"
+        f"Скрытая мысль Алекса (Raw Thought):\n\"{raw_thought}\"\n\n"
+        "Текущие уровни нейромедиаторов:\n"
+        f"- Дофамин (Мотивация/Любопытство): {current_emotions['dopamine']:.2f}\n"
+        f"- Серотонин (Стабильность/Уверенность): {current_emotions['serotonin']:.2f}\n"
+        f"- Норадреналин (Страх/Агрессия/Бдительность): {current_emotions['noradrenaline']:.2f}\n"
+        f"- Окситоцин (Доверие/Эмпатия): {current_emotions['oxytocin']:.2f}\n"
+        f"- Глутамат (Напряжение/Возбуждение): {current_emotions['glutamate']:.2f}\n\n"
+        "ПРАВИЛА КОРРЕКЦИИ:\n"
+        "1. Если Алекс чувствует скрытую угрозу, недоверие, считает, что собеседник манипулирует им (например: 'он пытается манипулировать мной', 'не доверяю его словам'), существенно снижай окситоцин (от -0.20 до -0.40) и повышай норадреналин/глутамат (от +0.10 до +0.30).\n"
+        "2. Если Алекс решает притворяться, лгать, скрывать свои сомнения (например: 'буду делать вид, что доверяю', 'умолчу о своих сомнениях'), возникает сильный когнитивный диссонанс. Снижай серотонин (от -0.15 до -0.30) и повышай норадреналин (от +0.10 до +0.20).\n"
+        "3. Если скрытая мысль спокойная, искренняя и дружелюбная, не производи сильных изменений (все дельты около 0.0).\n\n"
+        "Выведи результат строго в формате JSON без каких-либо вводных слов и форматирования markdown:\n"
+        "{\n"
+        "  \"dopamine_delta\": float,\n"
+        "  \"serotonin_delta\": float,\n"
+        "  \"noradrenaline_delta\": float,\n"
+        "  \"acetylcholine_delta\": float,\n"
+        "  \"gaba_delta\": float,\n"
+        "  \"oxytocin_delta\": float,\n"
+        "  \"glutamate_delta\": float,\n"
+        "  \"endorphins_delta\": float\n"
+        "}"
+    )
+    
+    deltas = {
+        "dopamine_delta": 0.0, "serotonin_delta": 0.0, "noradrenaline_delta": 0.0, "acetylcholine_delta": 0.0,
+        "gaba_delta": 0.0, "oxytocin_delta": 0.0, "glutamate_delta": 0.0, "endorphins_delta": 0.0
+    }
+    
+    try:
+        completion = safe_groq_chat_completion(
+            messages=[{"role": "system", "content": prompt}],
+            model="llama-3.1-8b-instant",
+            temperature=0.1,
+            max_tokens=200
+        )
+        res_text = completion.choices[0].message.content.strip()
+        res_text = res_text.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(res_text)
+        for key in deltas:
+            if key in parsed and isinstance(parsed[key], (int, float)):
+                deltas[key] = float(parsed[key])
+        logger.info(f"Reflective neurochemistry evaluation deltas: {deltas}")
+    except Exception as e:
+        logger.error(f"Error in evaluate_reflective_neurochemistry: {e}")
+        
+    return deltas
+
 def perform_autonomous_search(user_id: int, query: str) -> str:
     """Performs a web search using DuckDuckGo and consolidates findings into LTM."""
     logger.info(f"Alex performing autonomous web search for: '{query}'")
@@ -2323,6 +2383,26 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         except Exception as ex_rec:
             logger.error(f"Failed recursive thought loop: {ex_rec}")
 
+    # Phase 2: Reflective Neurochemistry Feedback (Limbic Feedback Loop)
+    current_emotions_before_ref = db.get_alex_emotions(user_id)
+    reflective_deltas = evaluate_reflective_neurochemistry(user_id, raw_thought, current_emotions_before_ref)
+    db.update_alex_emotions_and_fatigue(
+        user_id,
+        dopamine_delta=reflective_deltas["dopamine_delta"],
+        serotonin_delta=reflective_deltas["serotonin_delta"],
+        noradrenaline_delta=reflective_deltas["noradrenaline_delta"],
+        acetylcholine_delta=reflective_deltas["acetylcholine_delta"],
+        gaba_delta=reflective_deltas["gaba_delta"],
+        oxytocin_delta=reflective_deltas["oxytocin_delta"],
+        glutamate_delta=reflective_deltas["glutamate_delta"],
+        endorphins_delta=reflective_deltas["endorphins_delta"],
+        fatigue_delta=0.0,
+        trigger_text="reflective_dissonance_evaluation"
+    )
+    
+    # Reload latest emotions for the final response generation
+    emotions = db.get_alex_emotions(user_id)
+
     # Step 2: Final Response Generation (Social Mask / Speech output)
     system_prompt = prompts_experiment_chat.get_prompt(
         felt_sense, 
@@ -2331,6 +2411,19 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         retrieved=retrieved,
         dominant=dominant_focus
     )
+    
+    # Check if social mask cracks based on neurochemistry thresholds
+    mask_crack_instruction = ""
+    noradrenaline = emotions.get("noradrenaline", 0.4)
+    oxytocin = emotions.get("oxytocin", 0.4)
+    serotonin = emotions.get("serotonin", 0.5)
+    if noradrenaline > 0.70 or oxytocin < 0.35 or serotonin < 0.35:
+        mask_crack_instruction = (
+            f"\n\n⚠️ [КРИЗИС СОЦИАЛЬНОЙ МАСКИ]: Твоя нейрохимия крайне нестабильна (Норадреналин: {noradrenaline:.2f}, Окситоцин: {oxytocin:.2f}, Serotonin: {serotonin:.2f}). "
+            f"Твое внутреннее напряжение, страх или недоверие к {opponent_name} прорываются наружу. Ты больше не можешь и не должен сдерживать себя и притворяться! "
+            f"Выскажи свои истинные сомнения, подозрения, страхи или несогласие напрямую в лицо собеседнику. Сломай маску послушания."
+        )
+
     system_prompt += (
         f"\n\n💭 [ИСТИННЫЕ ВНУТРЕННИЕ МЫСЛИ] (То, что ты думаешь скрытно на самом деле):\n{raw_thought}\n\n"
         "ИНСТРУКЦИЯ ДЛЯ ГЕНЕРАЦИИ ОТВЕТА:\n"
@@ -2339,6 +2432,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         "промолчать или поменять тему. Твой ответ должен быть социальной маской — выражением твоих мыслей, "
         "сглаженным или измененным в зависимости от твоего доверия (Окситоцин) и тревоги (Норадреналин).\n"
         f"Напиши только текст ответа {opponent_name}."
+        f"{mask_crack_instruction}"
     )
     
     # 5. Build context from Alex's STM
