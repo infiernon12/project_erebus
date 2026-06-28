@@ -167,13 +167,15 @@ def get_user(user_id: int):
         cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         return cursor.fetchone()
 
-def register_user(user_id: int, username: str = None) -> bool:
+def register_user(user_id: int, username: str = None, opponent_name: str = None) -> bool:
     if get_user(user_id):
         return False
+    if not opponent_name:
+        opponent_name = "Руслан"
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO users (user_id, username, opponent_name) VALUES (?, ?, ?)",
-            (user_id, username, "Руслан")
+            (user_id, username, opponent_name)
         )
         conn.commit()
     return True

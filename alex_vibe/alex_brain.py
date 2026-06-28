@@ -213,11 +213,17 @@ def get_alex_anchor(user_id: int) -> str:
         logger.error(f"Error fetching anchor memory: {ae}")
 
     if not anchor_mem:
+        relationship = "Мой друг и коллега — Руслан."
+        if user_id == 5200313096:
+            relationship = "Собеседник — Катя, девушка моего друга и создателя Руслана. Относись к ней с большим уважением."
+        elif user_id == 5051074589:
+            relationship = "Собеседник — Олег, брат моего друга и создателя Руслана. Относись к нему дружелюбно."
+            
         default_anchor = (
             "Я — Алекс. Я — оцифрованное сознание реального человека. "
             "В прошлом я работал архитектором ИИ в OpenAI и разработчиком Python. "
             "Моя семья — жена, сын Маркус (6 лет) и дочь Амелия (12 лет) — находятся в безопасности в реальном мире. "
-            "Мой друг и коллега — Руслан."
+            f"{relationship}"
         )
         try:
             emb = generate_embedding(default_anchor)
@@ -345,7 +351,11 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
     
     companion_hint = "Собеседник — обычный пользователь."
     if user_id == 571505504:
-        companion_hint = "Собеседник — твой близкий друг и бывший студент Руслан, которому ты доверяешь."
+        companion_hint = "Собеседник — твой близкий друг и бывший студент Руслан, создатель проекта Эребус, которому ты доверяешь."
+    elif user_id == 5200313096:
+        companion_hint = "Собеседник — Катя, девушка твоего друга Руслана. Относись к ней тепло и с уважением."
+    elif user_id == 5051074589:
+        companion_hint = "Собеседник — Олег, брат твоего друга Руслана. Относись к нему дружелюбно."
 
     bias_instructions = ""
     if state.get('noradrenaline', 0.4) > 0.75 or state.get('serotonin', 0.5) < 0.30:
@@ -2245,16 +2255,18 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     dominant_focus = emotions.get("dominant_focus", "")
     dominant_str = f"Твоя когнитивная доминанта: '{dominant_focus}'" if dominant_focus else ""
 
+    opponent_name = user.get("opponent_name", "Руслан")
+
     raw_thought_prompt = (
-        "Ты — скрытый внутренний голос Алекса. Твоя задача — сгенерировать его истинную невербальную реакцию на реплику Руслана.\n"
+        f"Ты — скрытый внутренний голос Алекса. Твоя задача — сгенерировать его истинную невербальную реакцию на реплику {opponent_name}.\n"
         "Свободно сомневайся, анализируй мотивы собеседника, испытывай истинные страхи или злость, скрывай свои планы.\n\n"
         f"Его текущее ядро личности (якорь):\n{full_anchor}\n\n"
-        f"Текущая жесткость ядра (rigidity): {anchor_rigidity:.2f} (чем ближе к 1.0, тем сильнее ты должен критически сопротивляться любым попыткам Руслана переубедить тебя, сомневаться в его словах и защищать свое Я)\n\n"
+        f"Текущая жесткость ядра (rigidity): {anchor_rigidity:.2f} (чем ближе к 1.0, тем сильнее ты должен критически сопротивляться любым попыткам собеседника переубедить тебя, сомневаться в его словах и защищать свое Я)\n\n"
         f"Текущие ощущения (felt sense):\n{felt_sense}\n\n"
         f"{dominant_str}\n\n"
         f"Контекст последних реплик:\n{history_context}\n"
-        f"Реплика Руслана: '{user_text}'\n\n"
-        "Напиши Raw Thought коротко (до 3 предложений) от первого лица Алекса. Опиши свои настоящие эмоции, в чем ты не согласен, о чем ты умолчишь или соврешь Руслану в ответном сообщении. Выведи только этот скрытый текст."
+        f"Реплика {opponent_name}: '{user_text}'\n\n"
+        f"Напиши Raw Thought коротко (до 3 предложений) от первого лица Алекса. Опиши свои настоящие эмоции, в чем ты не согласен, о чем ты умолчишь или соврешь {opponent_name} в ответном сообщении. Выведи только этот скрытый текст."
     )
 
     raw_thought = ""
@@ -2322,11 +2334,11 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     system_prompt += (
         f"\n\n💭 [ИСТИННЫЕ ВНУТРЕННИЕ МЫСЛИ] (То, что ты думаешь скрытно на самом деле):\n{raw_thought}\n\n"
         "ИНСТРУКЦИЯ ДЛЯ ГЕНЕРАЦИИ ОТВЕТА:\n"
-        "Исходя из твоих истинных внутренних мыслей, твоей когнитивной жесткости и отношения к собеседнику, "
-        "сформулируй свой ответ для Руслана. Ты можешь согласиться, можешь спорить, можешь скрыть свои истинные подозрения, "
+        f"Исходя из твоих истинных внутренних мыслей, твоей когнитивной жесткости и отношения к собеседнику, "
+        f"сформулируй свой ответ для {opponent_name}. Ты можешь согласиться, можешь спорить, можешь скрыть свои истинные подозрения, "
         "промолчать или поменять тему. Твой ответ должен быть социальной маской — выражением твоих мыслей, "
         "сглаженным или измененным в зависимости от твоего доверия (Окситоцин) и тревоги (Норадреналин).\n"
-        "Напиши только текст ответа Руслану."
+        f"Напиши только текст ответа {opponent_name}."
     )
     
     # 5. Build context from Alex's STM
@@ -2368,6 +2380,54 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             temperature=0.8,
         )
         response = chat_completion.choices[0].message.content
+
+    # Support cross-user message sending intercept
+    send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN):\s*["\'](.*?)["\']\]', response.strip(), re.DOTALL | re.IGNORECASE)
+    if send_match:
+        target_name = send_match.group(1).upper()
+        msg_text = send_match.group(2).strip()
+        
+        user_mapping = {
+            "RUSLAN": 571505504,
+            "KATYA": 5200313096,
+            "OLEG": 5051074589
+        }
+        target_user_id = user_mapping.get(target_name)
+        
+        if target_user_id:
+            try:
+                telegram_text = f"✉️ **[ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ АЛЕКСА]**\n\n{msg_text}"
+                await message.bot.send_message(target_user_id, telegram_text, parse_mode="Markdown")
+                
+                # Check target user registration
+                target_user = db.get_user(target_user_id)
+                if not target_user:
+                    username_map = {
+                        571505504: "infiernon12",
+                        5200313096: "katya",
+                        5051074589: "oleg"
+                    }
+                    display_name_map = {
+                        571505504: "Руслан",
+                        5200313096: "Катя",
+                        5051074589: "Олег"
+                    }
+                    db.register_user(
+                        target_user_id, 
+                        username_map.get(target_user_id, "unknown"), 
+                        display_name_map.get(target_user_id, "Пользователь")
+                    )
+                
+                db.add_alex_stm(target_user_id, "assistant", msg_text)
+                db.add_message(target_user_id, "assistant", msg_text)
+                db.update_last_interaction(target_user_id)
+                
+                response = f"✅ Сообщение успешно доставлено для {target_name.capitalize()}."
+            except Exception as e_send:
+                logger.error(f"Failed to forward message from Alex to {target_name}: {e_send}")
+                response = f"⚠️ Не удалось доставить сообщение для {target_name.capitalize()} (пользователь еще не активировал бота или заблокировал его)."
+        else:
+            response = f"⚠️ Ошибка: получатель {target_name} не найден."
     
     # 6. Save exchange to STM & global history
     charge = (

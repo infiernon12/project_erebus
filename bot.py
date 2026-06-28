@@ -91,7 +91,7 @@ async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username
     
-    is_new = db.register_user(user_id, username)
+    is_new = db.register_user(user_id, username, message.from_user.first_name)
     
     # Seeds default anchor and emotions automatically
     db.get_alex_emotions(user_id)
@@ -127,7 +127,7 @@ async def cmd_reset(message: types.Message):
         conn.commit()
         
     # Re-register and seed defaults
-    db.register_user(user_id, message.from_user.username)
+    db.register_user(user_id, message.from_user.username, message.from_user.first_name)
     db.get_alex_emotions(user_id)
     alex_brain.get_alex_anchor(user_id)
     
@@ -462,7 +462,7 @@ async def chat_handler(message: types.Message):
     
     user = db.get_user(user_id)
     if not user:
-        db.register_user(user_id, message.from_user.username)
+        db.register_user(user_id, message.from_user.username, message.from_user.first_name)
         user = db.get_user(user_id)
         
     status_msg = await message.answer("🧠 *Алекс думает...*")
