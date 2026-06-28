@@ -117,6 +117,12 @@ groq_client_fallback = Groq(api_key=GROQ_API_KEY, max_retries=2)
 groq_client = groq_client_primary
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+API_COOLDOWN_UNTIL = None
+
+def trigger_api_cooldown():
+    global API_COOLDOWN_UNTIL
+    API_COOLDOWN_UNTIL = datetime.now() + timedelta(minutes=15)
+    logger.error(f"API limits exhausted. Cooldown triggered until {API_COOLDOWN_UNTIL}")
 
 def call_openrouter_chat(messages: list, model: str = "openrouter/free", temperature: float = 0.8, max_tokens: int = None):
     """
@@ -216,8 +222,10 @@ def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0
                         return call_openrouter_chat(messages, "openrouter/free", temperature, max_tokens)
                     except Exception as ore:
                         logger.error(f"OpenRouter fallback also failed: {ore}")
+                        trigger_api_cooldown()
                         raise e
                 else:
+                    trigger_api_cooldown()
                     raise e
 
 ROM_IDENTITY_CONSTANTS = (
@@ -2261,6 +2269,18 @@ def verify_active_hypotheses(user_id: int, user_text: str, retrieved_memories: l
 async def handle_alex_chat(message: Message, user: dict, user_text: str, status_msg: Message):
     user_id = message.from_user.id
     
+    # Check API cooldown
+    global API_COOLDOWN_UNTIL
+    if API_COOLDOWN_UNTIL and datetime.now() < API_COOLDOWN_UNTIL:
+        remaining_sec = int((API_COOLDOWN_UNTIL - datetime.now()).total_seconds())
+        remaining_min = (remaining_sec // 60) + 1
+        cooldown_msg = f"⏳ **[СИСТЕМА]** Исчерпаны лимиты API. Ожидание. Алекс вернется через {remaining_min} минут."
+        try:
+            await status_msg.edit_text(cooldown_msg, parse_mode="Markdown")
+        except Exception:
+            await message.answer(cooldown_msg, parse_mode="Markdown")
+        return
+        
     # Check if user confirms any unverified web memories
     check_user_verification(user_id, user_text)
     

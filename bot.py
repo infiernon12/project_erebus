@@ -484,7 +484,9 @@ async def reflection_daemon():
     while True:
         await asyncio.sleep(10)
         now = datetime.now()
-        
+        if alex_brain.API_COOLDOWN_UNTIL and now < alex_brain.API_COOLDOWN_UNTIL:
+            continue
+            
         try:
             # Fetch all registered users
             with db.get_connection() as conn:
