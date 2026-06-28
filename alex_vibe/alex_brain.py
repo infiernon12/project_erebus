@@ -234,20 +234,34 @@ def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0
             else:
                 # If we've exhausted all Groq models, check if OpenRouter is available
                 if OPENROUTER_API_KEY:
-                    # Try to fall back to the paid counterpart on OpenRouter
-                    or_model = "meta-llama/llama-4-scout-17b-16e-instruct"
-                    if current_model == "llama-3.3-70b-versatile":
-                        or_model = "meta-llama/llama-3.3-70b-instruct"
-                    elif current_model == "llama-3.1-8b-instant":
-                        or_model = "meta-llama/llama-3.1-8b-instruct"
+                    # Build OpenRouter fallback chain based on the original requested model
+                    or_chain = []
+                    if model == "meta-llama/llama-4-scout-17b-16e-instruct":
+                        or_chain = [
+                            "meta-llama/llama-4-scout-17b-16e-instruct",
+                            "meta-llama/llama-3.3-70b-instruct",
+                            "meta-llama/llama-3.1-8b-instruct"
+                        ]
+                    elif model == "llama-3.3-70b-versatile":
+                        or_chain = [
+                            "meta-llama/llama-3.3-70b-instruct",
+                            "meta-llama/llama-3.1-8b-instruct"
+                        ]
+                    else:
+                        or_chain = [
+                            "meta-llama/llama-3.1-8b-instruct"
+                        ]
+
+                    logger.warning(f"All Groq models failed. Trying OpenRouter fallback chain: {or_chain}...")
+                    for or_model in or_chain:
+                        try:
+                            return call_openrouter_chat(messages, or_model, temperature, max_tokens)
+                        except Exception as ore:
+                            logger.error(f"OpenRouter candidate {or_model} failed: {ore}")
                     
-                    logger.warning(f"All Groq models failed. Falling back to OpenRouter paid model {or_model}...")
-                    try:
-                        return call_openrouter_chat(messages, or_model, temperature, max_tokens)
-                    except Exception as ore:
-                        logger.error(f"OpenRouter fallback to {or_model} also failed: {ore}")
-                        trigger_api_cooldown()
-                        raise e
+                    # If all OpenRouter fallbacks fail
+                    trigger_api_cooldown()
+                    raise e
                 else:
                     trigger_api_cooldown()
                     raise e
