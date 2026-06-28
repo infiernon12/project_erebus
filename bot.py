@@ -142,7 +142,7 @@ async def cmd_reset(message: types.Message):
 
 @dp.message(Command("status"))
 @dp.message(Command("alex_state"))
-@dp.message(F.text == "🧠 Состояние Алекса")
+@dp.message(F.text.endswith("Состояние Алекса"))
 async def cmd_status(message: types.Message):
     user_id = message.from_user.id
     emotions = db.get_alex_emotions(user_id)
@@ -205,19 +205,24 @@ async def cmd_status(message: types.Message):
     
     await message.answer(status_text, reply_markup=inline_kb, parse_mode=ParseMode.MARKDOWN)
 
-@dp.message(F.text == "📖 Файлы и чтение")
+@dp.message(F.text.endswith("Файлы и чтение"))
 async def btn_files(message: types.Message):
-    files = alex_brain.list_workspace_files()
-    ws = ", ".join(files["workspace"]) if files["workspace"] else "пусто"
-    rq = ", ".join(files["reading_queue"]) if files["reading_queue"] else "пусто"
-    
-    report = (
-        "📖 **[СОСТОЯНИЕ КОГНИТИВНЫХ ФАЙЛОВ]**\n\n"
-        f"📂 **Рабочая папка (`alex_workspace/`):**\n`{ws}`\n\n"
-        f"📚 **Очередь на чтение (`alex_reading/`):**\n`{rq}`\n\n"
-        "_Вы можете добавлять файлы .txt или .md в `alex_reading/` через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие._"
-    )
-    await message.answer(report, parse_mode=ParseMode.MARKDOWN)
+    logger.info(f"btn_files triggered by user {message.from_user.id}")
+    try:
+        files = alex_brain.list_workspace_files()
+        ws = ", ".join(files["workspace"]) if files["workspace"] else "пусто"
+        rq = ", ".join(files["reading_queue"]) if files["reading_queue"] else "пусто"
+        
+        report = (
+            "📖 **[СОСТОЯНИЕ КОГНИТИВНЫХ ФАЙЛОВ]**\n\n"
+            f"📂 **Рабочая папка (`alex_workspace/`):**\n`{ws}`\n\n"
+            f"📚 **Очередь на чтение (`alex_reading/`):**\n`{rq}`\n\n"
+            "_Вы можете добавлять файлы .txt или .md в `alex_reading/` через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие._"
+        )
+        await message.answer(report, parse_mode=ParseMode.MARKDOWN)
+    except Exception as ex:
+        logger.error(f"Error in btn_files: {ex}", exc_info=True)
+        await message.answer("⚠️ Произошла ошибка при получении списка файлов.")
 
 def format_utc_to_local(utc_str: str) -> str:
     try:
