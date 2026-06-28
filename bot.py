@@ -8,9 +8,10 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 import database as db
 import alex_vibe.alex_brain as alex_brain
@@ -38,6 +39,24 @@ last_reflection = {}
 last_weak_thought_time = {}
 last_workspace_time = {}
 
+def get_alex_keyboard():
+    keyboard_buttons = [
+        [
+            KeyboardButton(text="📊 Нейропрофиль"),
+            KeyboardButton(text="💤 Уложить спать")
+        ],
+        [
+            KeyboardButton(text="📖 Файлы и чтение"),
+            KeyboardButton(text="🧹 Сброс Алекса")
+        ]
+    ]
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard_buttons,
+        resize_keyboard=True,
+        persistent=True,
+        input_field_placeholder="Напиши Алексу..."
+    )
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
@@ -58,9 +77,9 @@ async def cmd_start(message: types.Message):
         "• `/start` — Инициализировать связь.\n"
         "• `/reset` — Стереть память Алекса и полностью сбросить его когнитивную матрицу к заводским константам.\n"
         "• `/status` — Получить текущую нейрохимическую сводку (уровни дофамина, норадреналина и усталости).\n\n"
-        "Напиши приветствие, чтобы начать."
+        "Используйте кнопки меню внизу для быстрого доступа к системам."
     )
-    await message.answer(welcome_text, parse_mode=ParseMode.MARKDOWN)
+    await message.answer(welcome_text, reply_markup=get_alex_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
 @dp.message(Command("reset"))
 async def cmd_reset(message: types.Message):
@@ -116,6 +135,36 @@ async def cmd_status(message: types.Message):
         neuro_report += f"🎯 **Доминанта:** {emotions['dominant_focus']} (сила: {emotions['dominant_strength']:.2f})\n"
         
     await message.answer(neuro_report, parse_mode=ParseMode.MARKDOWN)
+
+@dp.message(F.text == "📊 Нейропрофиль")
+async def btn_status(message: types.Message):
+    await cmd_status(message)
+
+@dp.message(F.text == "💤 Уложить спать")
+async def btn_sleep(message: types.Message):
+    user_id = message.from_user.id
+    asyncio.create_task(alex_brain.trigger_sleep_cycle(user_id))
+    await message.answer(
+        "💤 **[СИСТЕМА]** Сознание Алекса принудительно отправлено в сон (консолидация кратковременной памяти, сброс утомления и аллостатическая адаптация baselines)."
+    )
+
+@dp.message(F.text == "📖 Файлы и чтение")
+async def btn_files(message: types.Message):
+    files = alex_brain.list_workspace_files()
+    ws = ", ".join(files["workspace"]) if files["workspace"] else "пусто"
+    rq = ", ".join(files["reading_queue"]) if files["reading_queue"] else "пусто"
+    
+    report = (
+        "📖 **[СОСТОЯНИЕ КОГНИТИВНЫХ ФАЙЛОВ]**\n\n"
+        f"📂 **Рабочая папка (`alex_workspace/`):**\n`{ws}`\n\n"
+        f"📚 **Очередь на чтение (`alex_reading/`):**\n`{rq}`\n\n"
+        "_Вы можете добавлять файлы .txt или .md в `alex_reading/` через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие._"
+    )
+    await message.answer(report, parse_mode=ParseMode.MARKDOWN)
+
+@dp.message(F.text == "🧹 Сброс Алекса")
+async def btn_reset(message: types.Message):
+    await cmd_reset(message)
 
 @dp.message()
 async def chat_handler(message: types.Message):
