@@ -224,9 +224,7 @@ def clear_chat_history(user_id: int):
         conn.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
         conn.commit()
 
-def get_alex_emotions(user_id: int) -> dict:
-    if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+def _get_alex_emotions_row(user_id: int) -> dict:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -260,6 +258,22 @@ def get_alex_emotions(user_id: int) -> dict:
             "expected_return": row[21],
             "leave_reason": row[22]
         }
+
+def get_alex_emotions(user_id: int) -> dict:
+    if TESTING:
+        return _get_alex_emotions_row(user_id)
+    
+    global_emotions = _get_alex_emotions_row(GLOBAL_ALEX_ID)
+    if user_id == GLOBAL_ALEX_ID:
+        return global_emotions
+    
+    relational_emotions = _get_alex_emotions_row(user_id)
+    merged = dict(global_emotions)
+    merged["oxytocin"] = relational_emotions["oxytocin"]
+    merged["noradrenaline"] = relational_emotions["noradrenaline"]
+    merged["base_oxytocin"] = relational_emotions["base_oxytocin"]
+    merged["base_noradrenaline"] = relational_emotions["base_noradrenaline"]
+    return merged
 
 def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: str):
     if not TESTING:
@@ -317,7 +331,7 @@ NEURO_DECAY = {
     "endorphins": 0.20
 }
 
-def update_alex_emotions_and_fatigue(
+def _update_alex_emotions_and_fatigue_raw(
     user_id: int, 
     dopamine_delta: float, 
     serotonin_delta: float, 
@@ -330,9 +344,7 @@ def update_alex_emotions_and_fatigue(
     fatigue_delta: float,
     trigger_text: str = ""
 ):
-    if not TESTING:
-        user_id = GLOBAL_ALEX_ID
-    current = get_alex_emotions(user_id)
+    current = _get_alex_emotions_row(user_id)
     
     new_da = current["dopamine"] + dopamine_delta
     new_5ht = current["serotonin"] + serotonin_delta
@@ -381,6 +393,69 @@ def update_alex_emotions_and_fatigue(
              trigger_text)
         )
         conn.commit()
+
+def update_alex_emotions_and_fatigue(
+    user_id: int, 
+    dopamine_delta: float, 
+    serotonin_delta: float, 
+    noradrenaline_delta: float, 
+    acetylcholine_delta: float, 
+    gaba_delta: float,
+    oxytocin_delta: float,
+    glutamate_delta: float,
+    endorphins_delta: float,
+    fatigue_delta: float,
+    trigger_text: str = ""
+):
+    if TESTING:
+        _update_alex_emotions_and_fatigue_raw(
+            user_id, dopamine_delta, serotonin_delta, noradrenaline_delta,
+            acetylcholine_delta, gaba_delta, oxytocin_delta, glutamate_delta,
+            endorphins_delta, fatigue_delta, trigger_text
+        )
+        return
+
+    if user_id == GLOBAL_ALEX_ID:
+        _update_alex_emotions_and_fatigue_raw(
+            user_id=GLOBAL_ALEX_ID,
+            dopamine_delta=dopamine_delta,
+            serotonin_delta=serotonin_delta,
+            noradrenaline_delta=noradrenaline_delta,
+            acetylcholine_delta=acetylcholine_delta,
+            gaba_delta=gaba_delta,
+            oxytocin_delta=oxytocin_delta,
+            glutamate_delta=glutamate_delta,
+            endorphins_delta=endorphins_delta,
+            fatigue_delta=fatigue_delta,
+            trigger_text=trigger_text
+        )
+    else:
+        _update_alex_emotions_and_fatigue_raw(
+            user_id=GLOBAL_ALEX_ID,
+            dopamine_delta=dopamine_delta,
+            serotonin_delta=serotonin_delta,
+            noradrenaline_delta=0.0,
+            acetylcholine_delta=acetylcholine_delta,
+            gaba_delta=gaba_delta,
+            oxytocin_delta=0.0,
+            glutamate_delta=glutamate_delta,
+            endorphins_delta=endorphins_delta,
+            fatigue_delta=fatigue_delta,
+            trigger_text=trigger_text
+        )
+        _update_alex_emotions_and_fatigue_raw(
+            user_id=user_id,
+            dopamine_delta=0.0,
+            serotonin_delta=0.0,
+            noradrenaline_delta=noradrenaline_delta,
+            acetylcholine_delta=0.0,
+            gaba_delta=0.0,
+            oxytocin_delta=oxytocin_delta,
+            glutamate_delta=0.0,
+            endorphins_delta=0.0,
+            fatigue_delta=0.0,
+            trigger_text=trigger_text
+        )
 
 def set_alex_fatigue(user_id: int, value: float):
     if not TESTING:
