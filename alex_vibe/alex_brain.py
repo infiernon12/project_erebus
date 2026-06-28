@@ -350,7 +350,7 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
     state = db.get_alex_emotions(user_id)
     
     companion_hint = "Собеседник — обычный пользователь."
-    if user_id == 571505504:
+    if user_id in (571505504, 7185711234):
         companion_hint = "Собеседник — твой близкий друг и бывший студент Руслан, создатель проекта Эребус, которому ты доверяешь."
     elif user_id == 5200313096:
         companion_hint = "Собеседник — Катя, девушка твоего друга Руслана. Относись к ней тепло и с уважением."

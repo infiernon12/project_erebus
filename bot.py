@@ -35,7 +35,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # Whitelist of allowed Telegram User IDs
-ALLOWED_USERS = {5200313096, 5051074589, 571505504}
+ALLOWED_USERS = {5200313096, 5051074589, 571505504, 7185711234}
 
 class AccessControlMiddleware(BaseMiddleware):
     async def __call__(self, handler, event: TelegramObject, data: dict):
