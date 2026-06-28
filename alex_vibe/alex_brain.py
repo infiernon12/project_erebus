@@ -113,7 +113,7 @@ def run_python_script(filename: str) -> str:
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 groq_client_primary = Groq(api_key=GROQ_API_KEY, max_retries=0)
-groq_client_fallback = Groq(api_key=GROQ_API_KEY, max_retries=2)
+groq_client_fallback = Groq(api_key=GROQ_API_KEY, max_retries=0)
 groq_client = groq_client_primary
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")

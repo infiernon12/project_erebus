@@ -497,7 +497,7 @@ async def reflection_daemon():
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT user_id FROM users")
-                user_ids = [row["user_id"] for row in cursor.fetchall()]
+                user_ids = [row["user_id"] for row in cursor.fetchall() if row["user_id"] in ALLOWED_USERS]
                 
             for user_id in user_ids:
                 emotions = db.get_alex_emotions(user_id)
@@ -609,6 +609,16 @@ async def reflection_daemon():
 async def main():
     # Initialize DB tables
     db.init_db()
+    
+    # Clean up non-whitelisted users from database to prevent token waste
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users WHERE user_id NOT IN (5200313096, 5051074589, 571505504, 7185711234)")
+            conn.commit()
+            logger.info("Purged non-whitelisted test users from database users table.")
+    except Exception as cleanup_err:
+        logger.error(f"Error purging test users: {cleanup_err}")
     
     # Start reflection daemon task
     asyncio.create_task(reflection_daemon())
