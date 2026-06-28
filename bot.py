@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
 import database as db
 import alex_vibe.alex_brain as alex_brain
@@ -42,12 +42,8 @@ last_workspace_time = {}
 def get_alex_keyboard():
     keyboard_buttons = [
         [
-            KeyboardButton(text="📊 Нейропрофиль"),
-            KeyboardButton(text="💤 Уложить спать")
-        ],
-        [
-            KeyboardButton(text="📖 Файлы и чтение"),
-            KeyboardButton(text="🧹 Сброс Алекса")
+            KeyboardButton(text="🧠 Состояние Алекса"),
+            KeyboardButton(text="📖 Файлы и чтение")
         ]
     ]
     return ReplyKeyboardMarkup(
@@ -112,41 +108,69 @@ async def cmd_reset(message: types.Message):
     )
 
 @dp.message(Command("status"))
+@dp.message(Command("alex_state"))
+@dp.message(F.text == "🧠 Состояние Алекса")
 async def cmd_status(message: types.Message):
     user_id = message.from_user.id
     emotions = db.get_alex_emotions(user_id)
+    ltm_list = db.get_ltm_nodes_by_user(user_id)
+    ltm_edges = db.get_ltm_edges_by_user(user_id)
+    stm_list = db.get_alex_stm(user_id)
     
-    neuro_report = (
-        "📊 **[КОГНИТИВНЫЙ ПРОФИЛЬ АЛЕКСА]**\n\n"
-        f"• **Дофамин (Мотивация):** {emotions['dopamine']:.2f} (базовый: {emotions['base_dopamine']:.2f})\n"
-        f"• **Серотонин (Спокойствие):** {emotions['serotonin']:.2f} (базовый: {emotions['base_serotonin']:.2f})\n"
-        f"• **Норадреналин (Тревога):** {emotions['noradrenaline']:.2f} (базовый: {emotions['base_noradrenaline']:.2f})\n"
-        f"• **Ацетилхолин (Фокус):** {emotions['acetylcholine']:.2f} (базовый: {emotions['base_acetylcholine']:.2f})\n"
-        f"• **ГАМК (Торможение):** {emotions['gaba']:.2f} (базовый: {emotions['base_gaba']:.2f})\n"
-        f"• **Окситоцин (Доверие):** {emotions['oxytocin']:.2f} (базовый: {emotions['base_oxytocin']:.2f})\n"
-        f"• **Глутамат (Возбуждение):** {emotions['glutamate']:.2f} (базовый: {emotions['base_glutamate']:.2f})\n"
-        f"• **Эндорфины (Глушение боли):** {emotions['endorphins']:.2f} (базовый: {emotions['base_endorphins']:.2f})\n"
-        f"• **Синаптическая усталость:** {emotions['fatigue']:.1f}%\n"
-    )
-    
-    if emotions.get("expected_return"):
-        neuro_report += f"⏳ **Ожидаемое возвращение:** через {emotions['expected_return']}\n"
+    dominant_str = ""
     if emotions.get("dominant_focus"):
-        neuro_report += f"🎯 **Доминанта:** {emotions['dominant_focus']} (сила: {emotions['dominant_strength']:.2f})\n"
+        focus = emotions["dominant_focus"]
+        strength = emotions.get("dominant_strength", 0.0)
+        bar_len = 5
+        filled = int(strength * bar_len)
+        bar = "▰" * filled + "▱" * (bar_len - filled)
+        dominant_str = f"🎯 **Когнитивная Доминанта:** `{focus}` (`{strength:.2f}` `{bar}`)\n\n"
         
-    await message.answer(neuro_report, parse_mode=ParseMode.MARKDOWN)
-
-@dp.message(F.text == "📊 Нейропрофиль")
-async def btn_status(message: types.Message):
-    await cmd_status(message)
-
-@dp.message(F.text == "💤 Уложить спать")
-async def btn_sleep(message: types.Message):
-    user_id = message.from_user.id
-    asyncio.create_task(alex_brain.trigger_sleep_cycle(user_id))
-    await message.answer(
-        "💤 **[СИСТЕМА]** Сознание Алекса принудительно отправлено в сон (консолидация кратковременной памяти, сброс утомления и аллостатическая адаптация baselines)."
+    status_text = (
+        "🧠 **Текущий нейробиологический профиль Алекса:**\n\n"
+        f"🧪 Дофамин (Dopamine): `{emotions['dopamine']:.2f}/1.00` (base: `{emotions['base_dopamine']:.2f}`)\n"
+        f"🛡️ Серотонин (Serotonin): `{emotions['serotonin']:.2f}/1.00` (base: `{emotions['base_serotonin']:.2f}`)\n"
+        f"⚡ Норадреналин (Noradrenaline): `{emotions['noradrenaline']:.2f}/1.00` (base: `{emotions['base_noradrenaline']:.2f}`)\n"
+        f"🎓 Ацетилхолин (Acetylcholine): `{emotions['acetylcholine']:.2f}/1.00` (base: `{emotions['base_acetylcholine']:.2f}`)\n"
+        f"☯️ ГАМК (GABA): `{emotions['gaba']:.2f}/1.00` (base: `{emotions['base_gaba']:.2f}`)\n"
+        f"🫂 Окситоцин (Oxytocin): `{emotions['oxytocin']:.2f}/1.00` (base: `{emotions['base_oxytocin']:.2f}`)\n"
+        f"🔥 Глутамат (Glutamate): `{emotions['glutamate']:.2f}/1.00` (base: `{emotions['base_glutamate']:.2f}`)\n"
+        f"💊 Эндорфины (Endorphins): `{emotions['endorphins']:.2f}/1.00` (base: `{emotions['base_endorphins']:.2f}`)\n"
+        f"🔋 Усталость (Fatigue): `{emotions['fatigue']:.1f}/100.0`\n\n"
+        f"{dominant_str}"
+        f"📥 Кратковременных воспоминаний (STM): `{len(stm_list)}`\n"
+        f"💾 Долговременных синапсов (LTM Nodes): `{len(ltm_list)}`\n"
+        f"🔗 Ассоциативных связей (LTM Edges): `{len(ltm_edges)}`\n"
+        f"🕒 Последняя активность: `{emotions['last_interaction']}`"
     )
+    
+    inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🧪 DA (Доф)", callback_data="alex:log:dopamine"),
+            InlineKeyboardButton(text="🛡️ 5-HT (Сер)", callback_data="alex:log:serotonin"),
+            InlineKeyboardButton(text="⚡ NE (Нор)", callback_data="alex:log:noradrenaline")
+        ],
+        [
+            InlineKeyboardButton(text="🎓 ACh (Аце)", callback_data="alex:log:acetylcholine"),
+            InlineKeyboardButton(text="☯️ GABA (ГАМК)", callback_data="alex:log:gaba"),
+            InlineKeyboardButton(text="🫂 OXT (Окс)", callback_data="alex:log:oxytocin")
+        ],
+        [
+            InlineKeyboardButton(text="🔥 GLU (Глу)", callback_data="alex:log:glutamate"),
+            InlineKeyboardButton(text="💊 END (Энд)", callback_data="alex:log:endorphins")
+        ],
+        [
+            InlineKeyboardButton(text="📊 Общий лог химии", callback_data="alex:cmd:log"),
+            InlineKeyboardButton(text="💭 Лог мыслей", callback_data="alex:cmd:thoughts")
+        ],
+        [
+            InlineKeyboardButton(text="🧬 Нейроны памяти (LTM)", callback_data="alex:cmd:neurons")
+        ],
+        [InlineKeyboardButton(text="🧠 Запустить рефлексию", callback_data="alex:reflect")],
+        [InlineKeyboardButton(text="💤 Отправить спать (1 мин)", callback_data="alex:sleep")]
+    ])
+    
+    await message.answer(status_text, reply_markup=inline_kb, parse_mode=ParseMode.MARKDOWN)
 
 @dp.message(F.text == "📖 Файлы и чтение")
 async def btn_files(message: types.Message):
@@ -162,9 +186,241 @@ async def btn_files(message: types.Message):
     )
     await message.answer(report, parse_mode=ParseMode.MARKDOWN)
 
-@dp.message(F.text == "🧹 Сброс Алекса")
-async def btn_reset(message: types.Message):
-    await cmd_reset(message)
+def format_utc_to_local(utc_str: str) -> str:
+    try:
+        utc_dt = datetime.strptime(utc_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        local_dt = utc_dt + (datetime.now() - datetime.utcnow())
+        return local_dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return utc_str
+
+# Alex Callback Query Handlers
+@dp.callback_query(F.data == "alex:cmd:log")
+async def callback_alex_cmd_log(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    query = """
+        SELECT dopamine_delta, serotonin_delta, noradrenaline_delta, acetylcholine_delta, 
+               gaba_delta, oxytocin_delta, glutamate_delta, endorphins_delta, 
+               trigger_text, created_at
+        FROM alex_neuro_history
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 5
+    """
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (user_id,))
+            rows = cursor.fetchall()
+            
+        if not rows:
+            await callback.message.answer("ℹ️ История нейробиологических логов пуста.")
+            await callback.answer()
+            return
+            
+        lines = ["📊 **Последние 5 нейробиологических логов Алекса:**\n"]
+        for row in rows:
+            deltas = {
+                "DA": row[0], "5-HT": row[1], "NE": row[2], "ACh": row[3],
+                "GABA": row[4], "OXT": row[5], "GLU": row[6], "END": row[7]
+            }
+            trigger = row[8] or "нет описания"
+            created_at = row[9]
+            time_str = format_utc_to_local(created_at)
+            
+            non_zero_deltas = []
+            for name, d in deltas.items():
+                if d and abs(d) >= 0.01:
+                    sign = "+" if d > 0 else ""
+                    non_zero_deltas.append(f"{name}: `{sign}{d:.2f}`")
+            
+            delta_summary = ", ".join(non_zero_deltas) if non_zero_deltas else "Без изменений"
+            if len(trigger) > 60:
+                trigger = trigger[:57] + "..."
+                
+            lines.append(f"⏱ `{time_str}` | {delta_summary}\n└ *Триггер:* `{trigger}`")
+            
+        await callback.message.answer("\n\n".join(lines), parse_mode="Markdown")
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in callback_alex_cmd_log: {e}")
+        await callback.message.answer(f"⚠️ Ошибка при чтении логов: {e}")
+        await callback.answer()
+
+@dp.callback_query(F.data == "alex:cmd:thoughts")
+async def callback_alex_cmd_thoughts(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    try:
+        thoughts = db.get_thought_history(user_id, limit=5)
+        if not thoughts:
+            await callback.message.answer("ℹ️ История мыслей Алекса пока пуста.")
+            await callback.answer()
+            return
+            
+        lines = ["💭 **История мыслей и рефлексии Алекса (последние 5):**\n"]
+        for t in thoughts:
+            t_type = "СЛАБАЯ МЫСЛЬ" if t["thought_type"] == "weak" else "РЕФЛЕКСИЯ"
+            created_at = t["created_at"]
+            content = t["thought"]
+            time_str = format_utc_to_local(created_at)
+            
+            lines.append(f"⏱ `{time_str}` | 🏷 **{t_type}**\n```\n{content}\n```")
+            
+        await callback.message.answer("\n\n".join(lines), parse_mode="Markdown")
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in callback_alex_cmd_thoughts: {e}")
+        await callback.message.answer(f"⚠️ Ошибка при чтении мыслей: {e}")
+        await callback.answer()
+
+@dp.callback_query(F.data == "alex:cmd:neurons")
+async def callback_alex_cmd_neurons(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    try:
+        nodes = db.get_ltm_nodes_by_user(user_id)
+        if not nodes:
+            await callback.message.answer("ℹ️ База долговременных нейронов Алекса пуста.")
+            await callback.answer()
+            return
+            
+        nodes = [n for n in nodes if n.get("memory_text")]
+        nodes.sort(key=lambda x: x.get("strength", 0.0), reverse=True)
+        
+        txt_lines = [
+            "🧬 КАРТА НЕЙРОНОВ ДОЛГОВРЕМЕННОЙ ПАМЯТИ АЛЕКСА (LTM)",
+            f"Всего нейронов: {len(nodes)}",
+            f"Дата выгрузки: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "=" * 60,
+            ""
+        ]
+        for node in nodes:
+            n_type = node.get("memory_type", "unknown")
+            strength = node.get("strength", 0.0)
+            text = node["memory_text"]
+            node_id = node.get("id", "?")
+            
+            bar_len = 10
+            filled = int(strength * bar_len)
+            bar = "▰" * filled + "▱" * (bar_len - filled)
+            
+            txt_lines.append(f"📌 ID: {node_id} | Тип: [{n_type}] | Сила: {strength:.4f} [{bar}]")
+            txt_lines.append(f"└ Текст: \"{text}\"")
+            txt_lines.append("-" * 60)
+            
+        txt_content = "\n".join(txt_lines)
+        
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as temp_file:
+            temp_file.write(txt_content)
+            temp_path = temp_file.name
+            
+        try:
+            from aiogram.types import FSInputFile
+            file_input = FSInputFile(temp_path, filename=f"alex_neurons_{user_id}.txt")
+            await callback.bot.send_document(
+                chat_id=callback.message.chat.id,
+                document=file_input,
+                caption=f"🧬 Карта нейронов памяти Алекса (LTM). Всего: {len(nodes)}."
+            )
+            await callback.answer()
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    except Exception as e:
+        logger.error(f"Error in callback_alex_cmd_neurons: {e}")
+        await callback.message.answer(f"⚠️ Ошибка при чтении нейронов: {e}")
+        await callback.answer()
+
+@dp.callback_query(F.data == "alex:reflect")
+async def callback_alex_reflect(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    await callback.message.answer("🧠 Инициирую процесс рефлексии (расщепленный диалог)... 💭")
+    dialogue_text, should_write, msg_out = alex_brain.run_reflection(user_id)
+    
+    reflect_text = (
+        "💬 **[ВНУТРЕННИЙ ДИАЛОГ АЛЕКСА]:**\n"
+        "```\n"
+        f"{dialogue_text}\n"
+        "```\n"
+    )
+    if should_write and msg_out:
+        reflect_text += f"📢 **Решение:** Алекс решил написать тебе:\n*\"{msg_out}\"*\n\n*(Сообщение отправлено)*"
+        db.add_alex_stm(user_id, "assistant", msg_out, emotional_charge=5.0)
+        db.add_message(user_id, "assistant", msg_out)
+        db.update_last_interaction(user_id)
+        await callback.message.answer(msg_out)
+        
+    await callback.message.answer(reflect_text, parse_mode="Markdown")
+    await callback.answer("Рефлексия завершена!")
+
+@dp.callback_query(F.data == "alex:sleep")
+async def callback_alex_sleep(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    await callback.message.answer("💤 Инициирую консолидацию памяти и сброс синаптической усталости Алекса...")
+    asyncio.create_task(alex_brain.trigger_sleep_cycle(user_id))
+    await callback.message.answer("✅ Память успешно консолидирована, усталость сброшена до 0.0.")
+    await callback.answer("Сон завершен!")
+
+@dp.callback_query(F.data.startswith("alex:log:"))
+async def callback_alex_log(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    chemical = callback.data.split(":")[-1]
+    chem_names = {
+        "dopamine": "Дофамин (Dopamine)",
+        "serotonin": "Серотонин (Serotonin)",
+        "noradrenaline": "Норадреналин (Noradrenaline)",
+        "acetylcholine": "Ацетилхолин (Acetylcholine)",
+        "gaba": "ГАМК (GABA)",
+        "oxytocin": "Окситоцин (Oxytocin)",
+        "glutamate": "Глутамат (Glutamate)",
+        "endorphins": "Эндорфины (Endorphins)"
+    }
+    chem_title = chem_names.get(chemical, chemical.capitalize())
+    
+    query = f"""
+        SELECT {chemical}, {chemical}_delta, trigger_text, created_at
+        FROM alex_neuro_history
+        WHERE user_id = ? AND ({chemical}_delta != 0.0 OR trigger_text = 'sleep_reset')
+        ORDER BY id DESC
+        LIMIT 10
+    """
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (user_id,))
+            rows = cursor.fetchall()
+            
+        if not rows:
+            await callback.message.answer(f"ℹ️ История изменений для **{chem_title}** пуста.")
+            await callback.answer()
+            return
+            
+        lines = [f"📊 **История изменений: {chem_title}**\n"]
+        for row in rows:
+            val = row[0]
+            delta = row[1]
+            trigger = row[2] or "нет описания"
+            created_at = row[3]
+            time_str = format_utc_to_local(created_at)
+            
+            if delta > 0:
+                delta_str = f"+{delta:.2f}"
+            elif delta < 0:
+                delta_str = f"{delta:.2f}"
+            else:
+                delta_str = "0.00"
+                
+            if len(trigger) > 50:
+                trigger = trigger[:47] + "..."
+                
+            lines.append(f"⏱ `{time_str}` | Значение: `{val:.2f}` (`{delta_str}`) \n└ *Триггер:* `{trigger}`")
+            
+        history_text = "\n\n".join(lines)
+        await callback.message.answer(history_text, parse_mode="Markdown")
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error fetching neuro history for {chemical}: {e}")
+        await callback.message.answer("⚠️ Ошибка при чтении истории изменений из БД", show_alert=True)
 
 @dp.message()
 async def chat_handler(message: types.Message):
