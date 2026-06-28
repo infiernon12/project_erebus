@@ -116,6 +116,59 @@ groq_client_primary = Groq(api_key=GROQ_API_KEY, max_retries=0)
 groq_client_fallback = Groq(api_key=GROQ_API_KEY, max_retries=2)
 groq_client = groq_client_primary
 
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+def call_openrouter_chat(messages: list, model: str = "openrouter/free", temperature: float = 0.8, max_tokens: int = None):
+    """
+    Sends a chat completion request to OpenRouter API.
+    """
+    if not OPENROUTER_API_KEY:
+        logger.error("OPENROUTER_API_KEY is not set.")
+        raise ValueError("OPENROUTER_API_KEY is not configured.")
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/infiernon12/project_erebus",
+        "X-Title": "Project Erebus Alex Core",
+    }
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+
+    import httpx
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Mock structure compatible with Groq/OpenAI response format
+            class MockMessage:
+                def __init__(self, content):
+                    self.content = content
+            class MockChoice:
+                def __init__(self, content):
+                    self.message = MockMessage(content)
+            class MockCompletion:
+                def __init__(self, content):
+                    self.choices = [MockChoice(content)]
+            
+            content = data["choices"][0]["message"]["content"]
+            return MockCompletion(content)
+    except Exception as e:
+        logger.error(f"OpenRouter API call failed: {e}")
+        raise e
+
 def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None):
     primary = groq_client_primary
     fallback = groq_client_fallback
@@ -155,7 +208,17 @@ def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0
                     f"Falling back to {next_model}..."
                 )
             else:
-                raise e
+                # If we've exhausted all Groq models, check if OpenRouter is available
+                if OPENROUTER_API_KEY:
+                    logger.warning("All Groq models failed. Falling back to OpenRouter...")
+                    try:
+                        # Fallback to smart free router
+                        return call_openrouter_chat(messages, "openrouter/free", temperature, max_tokens)
+                    except Exception as ore:
+                        logger.error(f"OpenRouter fallback also failed: {ore}")
+                        raise e
+                else:
+                    raise e
 
 ROM_IDENTITY_CONSTANTS = (
     "Мое имя — Алекс. Я — оцифрованное сознание реального человека.\n"
