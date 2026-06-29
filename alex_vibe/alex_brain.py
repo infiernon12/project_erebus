@@ -2597,7 +2597,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
 
     # Support cross-user message sending intercept
     response = response.strip() if response else ""
-    send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN):\s*["\'](.*?)["\']\]', response, re.DOTALL | re.IGNORECASE)
+    send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN|LOLITA):\s*["\'](.*?)["\']\]', response, re.DOTALL | re.IGNORECASE)
     if send_match:
         target_name = send_match.group(1).upper()
         msg_text = send_match.group(2).strip()
@@ -2605,7 +2605,8 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         user_mapping = {
             "RUSLAN": 571505504,
             "KATYA": 5200313096,
-            "OLEG": 5051074589
+            "OLEG": 5051074589,
+            "LOLITA": 7185711234
         }
         target_user_id = user_mapping.get(target_name)
         
@@ -2620,12 +2621,14 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
                     username_map = {
                         571505504: "infiernon12",
                         5200313096: "katya",
-                        5051074589: "oleg"
+                        5051074589: "oleg",
+                        7185711234: "archenat"
                     }
                     display_name_map = {
                         571505504: "Руслан",
                         5200313096: "Катя",
-                        5051074589: "Олег"
+                        5051074589: "Олег",
+                        7185711234: "Лолита"
                     }
                     db.register_user(
                         target_user_id, 

@@ -575,7 +575,7 @@ async def reflection_daemon():
                         db.add_thought_history(db.GLOBAL_ALEX_ID, dialogue_text, 'self_dialogue')
                         if should_write and msg_out:
                             import re
-                            send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN):\s*["\'](.*?)["\']\]', msg_out.strip(), re.DOTALL | re.IGNORECASE)
+                            send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN|LOLITA):\s*["\'](.*?)["\']\]', msg_out.strip(), re.DOTALL | re.IGNORECASE)
                             if send_match:
                                 target_name = send_match.group(1).upper()
                                 msg_text = send_match.group(2).strip()
@@ -583,7 +583,8 @@ async def reflection_daemon():
                                 user_mapping = {
                                     "RUSLAN": 571505504,
                                     "KATYA": 5200313096,
-                                    "OLEG": 5051074589
+                                    "OLEG": 5051074589,
+                                    "LOLITA": 7185711234
                                 }
                                 target_user_id = user_mapping.get(target_name)
                                 if target_user_id:
