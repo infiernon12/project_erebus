@@ -2055,6 +2055,22 @@ def _run_sleep_cycle_sync(user_id: int):
     except Exception as e:
         logger.error(f"Error in downscaling stage: {e}")
 
+    # --- Hypotheses Decay Stage ---
+    try:
+        active_hyps = db.get_alex_hypotheses(user_id, status='active')
+        for hyp in active_hyps:
+            conf = hyp.get("confidence", 0.5)
+            # Each sleep cycle without verification decreases confidence by 12%
+            new_conf = conf * 0.88
+            if new_conf < 0.15:
+                db.update_alex_hypothesis_status(hyp["id"], "refuted", 0.0)
+                logger.info(f"Hypothesis ID {hyp['id']} decayed below 0.15 and is REFUTED: {hyp.get('hypothesis_text') or hyp.get('thought')}")
+            else:
+                db.update_alex_hypothesis_status(hyp["id"], "active", new_conf)
+                logger.info(f"Hypothesis ID {hyp['id']} confidence decayed to {new_conf:.3f} -> active")
+    except Exception as e:
+        logger.error(f"Error decaying hypotheses in sleep cycle: {e}")
+
     # --- Physiological Reset & Baselines Adaptation ---
     try:
         with db.get_connection() as conn:
