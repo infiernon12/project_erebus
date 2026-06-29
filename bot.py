@@ -198,7 +198,8 @@ async def cmd_status(message: types.Message):
             InlineKeyboardButton(text="💭 Лог мыслей", callback_data="alex:cmd:thoughts")
         ],
         [
-            InlineKeyboardButton(text="🧬 Нейроны памяти (LTM)", callback_data="alex:cmd:neurons")
+            InlineKeyboardButton(text="🧬 Нейроны памяти (LTM)", callback_data="alex:cmd:neurons"),
+            InlineKeyboardButton(text="📥 Экспорт разума (Full Log)", callback_data="alex:cmd:export_all")
         ],
         [InlineKeyboardButton(text="🧠 Запустить рефлексию", callback_data="alex:reflect")],
         [InlineKeyboardButton(text="💤 Отправить спать (1 мин)", callback_data="alex:sleep")]
@@ -375,6 +376,158 @@ async def callback_alex_cmd_neurons(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Error in callback_alex_cmd_neurons: {e}")
         await callback.message.answer(f"⚠️ Ошибка при чтении нейронов: {e}")
+        await callback.answer()
+
+@dp.callback_query(F.data == "alex:cmd:export_all")
+async def callback_alex_cmd_export_all(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    await callback.message.answer("📦 Собираю когнитивную выгрузку Алекса (все логи, мысли, LTM, STM, гипотезы)... ⏳")
+    
+    try:
+        # Fetch emotions
+        emotions = db.get_alex_emotions(db.GLOBAL_ALEX_ID)
+        
+        # Fetch LTM nodes & edges
+        ltm_nodes = db.get_ltm_nodes_by_user(db.GLOBAL_ALEX_ID)
+        ltm_edges = db.get_ltm_edges_by_user(db.GLOBAL_ALEX_ID)
+        
+        # Fetch short term memory (all users STM for full audit)
+        all_users = db.get_all_users()
+        stms = {}
+        for u in all_users:
+            uid = u["user_id"]
+            u_name = u["opponent_name"] or u["username"] or str(uid)
+            stms[u_name] = db.get_alex_stm(uid, limit=200)
+            
+        # Fetch thoughts
+        thoughts = db.get_thought_history(db.GLOBAL_ALEX_ID, limit=500)
+        
+        # Fetch weak flow
+        weak_thoughts = db.get_weak_flow_thoughts(db.GLOBAL_ALEX_ID, limit=500)
+        
+        # Fetch hypotheses
+        hypotheses = db.get_alex_hypotheses(db.GLOBAL_ALEX_ID)
+        
+        # Fetch neuro logs
+        neuro_logs = []
+        query = """
+            SELECT dopamine, serotonin, noradrenaline, acetylcholine, gaba, oxytocin, glutamate, endorphins, fatigue,
+                   dopamine_delta, serotonin_delta, noradrenaline_delta, acetylcholine_delta, gaba_delta, oxytocin_delta, glutamate_delta, endorphins_delta, fatigue_delta,
+                   trigger_text, created_at
+            FROM alex_neuro_history
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 500
+        """
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (db.GLOBAL_ALEX_ID,))
+            neuro_logs = cursor.fetchall()
+
+        # Build report content
+        report = []
+        report.append("============================================================")
+        report.append("🧠 ПОЛНЫЙ ДИАГНОСТИЧЕСКИЙ ЭКСПОРТ ДАННЫХ РАЗУМА АЛЕКСА (FULL COGNITIVE LOG)")
+        report.append(f"Дата выгрузки: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append("============================================================\n")
+        
+        # Section 1: Neurobiology Current State
+        report.append("🟢 [1. ТЕКУЩИЙ НЕЙРОБИОЛОГИЧЕСКИЙ СТАТУС]")
+        report.append(f"🧪 Дофамин (Dopamine): {emotions['dopamine']:.4f} (базовый: {emotions['base_dopamine']:.4f})")
+        report.append(f"🛡️ Серотонин (Serotonin): {emotions['serotonin']:.4f} (базовый: {emotions['base_serotonin']:.4f})")
+        report.append(f"⚡ Норадреналин (Noradrenaline): {emotions['noradrenaline']:.4f} (базовый: {emotions['base_noradrenaline']:.4f})")
+        report.append(f"🎓 Ацетилхолин (Acetylcholine): {emotions['acetylcholine']:.4f} (базовый: {emotions['base_acetylcholine']:.4f})")
+        report.append(f"☯️ ГАМК (GABA): {emotions['gaba']:.4f} (базовый: {emotions['base_gaba']:.4f})")
+        report.append(f"🫂 Окситоцин (Oxytocin): {emotions['oxytocin']:.4f} (базовый: {emotions['base_oxytocin']:.4f})")
+        report.append(f"🔥 Глутамат (Glutamate): {emotions['glutamate']:.4f} (базовый: {emotions['base_glutamate']:.4f})")
+        report.append(f"💊 Эндорфины (Endorphins): {emotions['endorphins']:.4f} (базовый: {emotions['base_endorphins']:.4f})")
+        report.append(f"🔋 Синаптическая усталость (Fatigue): {emotions['fatigue']:.4f}/100.0")
+        report.append(f"🎯 Когнитивная доминанта: '{emotions.get('dominant_focus') or 'None'}' (сила: {emotions.get('dominant_strength', 0.0):.4f})")
+        report.append(f"🌙 Последний сюжет сновидения (Dream):\n{emotions.get('last_dream') or 'Нет снов в памяти'}")
+        report.append(f"🕒 Последняя активность: {emotions['last_interaction']}\n")
+        
+        # Section 2: Active Hypotheses
+        report.append("🟡 [2. АКТИВНЫЕ ГИПОТЕЗЫ И ПОДОЗРЕНИЯ]")
+        if hypotheses:
+            for h in hypotheses:
+                h_text = h.get("hypothesis_text") or h.get("thought", "")
+                report.append(f"- [{h.get('status', 'active').upper()} | Уверенность: {h.get('confidence', 0.5):.2f}] {h_text}")
+        else:
+            report.append("(нет активных гипотез)")
+        report.append("")
+        
+        # Section 3: LTM nodes
+        report.append(f"🔵 [3. ДОЛГОВРЕМЕННАЯ ПАМЯТЬ - СИНАПСЫ (LTM NODES: {len(ltm_nodes)})]")
+        for node in ltm_nodes:
+            report.append(f"  📌 ID: {node['id']} | Тип: [{node['memory_type']}] | Сила: {node['strength']:.3f} | Источник: {node['source']} | Вериф: {node['verified']}")
+            report.append(f"  └ Текст: \"{node['memory_text']}\"")
+        report.append("")
+        
+        # Section 4: LTM edges
+        report.append(f"🔗 [4. АССОЦИАТИВНЫЕ СВЯЗИ ПАМЯТИ (LTM EDGES: {len(ltm_edges)})]")
+        for edge in ltm_edges:
+            report.append(f"  ⛓ ID: {edge['id']} | Узел {edge['source_id']} -> Узел {edge['target_id']} | Вес: {edge['weight']:.3f} | Тип связи: {edge['association_type']}")
+        report.append("")
+        
+        # Section 5: STM logs
+        report.append("📥 [5. КРАТКОВРЕМЕННАЯ ПАМЯТЬ ДИАЛОГОВ (STM)]")
+        for u_name, logs in stms.items():
+            report.append(f"--- Разговор с: {u_name} (реплик в буфере: {len(logs)}) ---")
+            for log in logs:
+                report.append(f"  [{log['role']}]: {log['content']}")
+        report.append("")
+        
+        # Section 6: Thought History
+        report.append(f"💭 [6. ИСТОРИЯ АВТОНОМНЫХ МЫСЛЕЙ И РЕФЛЕКСИИ (THOUGHTS: {len(thoughts)})]")
+        for t in thoughts:
+            time_local = format_utc_to_local(t["created_at"])
+            report.append(f"⏱ {time_local} | [{t['thought_type'].upper()}]")
+            report.append(f"└ Мысль: \"{t['thought'].strip()}\"")
+        report.append("")
+        
+        # Section 7: Weak Flow Thoughts
+        report.append(f"💧 [7. СЛАБЫЙ ПОТОК МЫСЛЕЙ / СЛУЧАЙНЫЕ ИДЕИ (WEAK THOUGHTS: {len(weak_thoughts)})]")
+        for wt in weak_thoughts:
+            report.append(f"- {wt}")
+        report.append("")
+        
+        # Section 8: Neurochemistry history deltas
+        report.append(f"📊 [8. ИСТОРИЯ КОЛЕБАНИЙ НЕЙРОМЕДИАТОРОВ (NEURO HISTORY: {len(neuro_logs)} записей)]")
+        for r in neuro_logs:
+            time_local = format_utc_to_local(r[19])
+            non_zero_deltas = []
+            chems = ["DA", "5-HT", "NE", "ACh", "GABA", "OXT", "GLU", "END", "FAT"]
+            for idx, c_name in enumerate(chems):
+                d = r[9 + idx]
+                if d and abs(d) >= 0.005:
+                    sign = "+" if d > 0 else ""
+                    non_zero_deltas.append(f"{c_name}: {sign}{d:.2f}")
+            delta_summary = ", ".join(non_zero_deltas) if non_zero_deltas else "Без изменений"
+            report.append(f"⏱ {time_local} | {delta_summary} | Триггер: '{r[18] or 'нет описания'}'")
+            report.append(f"  └ Текущие: DA: {r[0]:.2f}, 5-HT: {r[1]:.2f}, NE: {r[2]:.2f}, ACh: {r[3]:.2f}, GABA: {r[4]:.2f}, OXT: {r[5]:.2f}, GLU: {r[6]:.2f}, END: {r[7]:.2f}, FAT: {r[8]:.2f}")
+            
+        txt_content = "\n".join(report)
+        
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as temp_file:
+            temp_file.write(txt_content)
+            temp_path = temp_file.name
+            
+        try:
+            from aiogram.types import FSInputFile
+            file_input = FSInputFile(temp_path, filename=f"alex_cognitive_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+            await callback.bot.send_document(
+                chat_id=callback.message.chat.id,
+                document=file_input,
+                caption="🧠 Полная диагностическая выгрузка разума Алекса (LTM, STM, мысли, гипотезы, лог химии)."
+            )
+            await callback.answer()
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    except Exception as e:
+        logger.error(f"Error in callback_alex_cmd_export_all: {e}", exc_info=True)
+        await callback.message.answer(f"⚠️ Ошибка при создании выгрузки: {e}")
         await callback.answer()
 
 @dp.callback_query(F.data == "alex:reflect")
