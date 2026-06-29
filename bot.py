@@ -6,6 +6,7 @@ import os
 import asyncio
 import logging
 from datetime import datetime
+import html
 from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
@@ -210,16 +211,16 @@ async def btn_files(message: types.Message):
     logger.info(f"btn_files triggered by user {message.from_user.id}")
     try:
         files = alex_brain.list_workspace_files()
-        ws = ", ".join(files["workspace"]) if files["workspace"] else "пусто"
-        rq = ", ".join(files["reading_queue"]) if files["reading_queue"] else "пусто"
+        ws = ", ".join([html.escape(f) for f in files["workspace"]]) if files["workspace"] else "пусто"
+        rq = ", ".join([html.escape(f) for f in files["reading_queue"]]) if files["reading_queue"] else "пусто"
         
         report = (
-            "📖 **[СОСТОЯНИЕ КОГНИТИВНЫХ ФАЙЛОВ]**\n\n"
-            f"📂 **Рабочая папка (`alex_workspace/`):**\n`{ws}`\n\n"
-            f"📚 **Очередь на чтение (`alex_reading/`):**\n`{rq}`\n\n"
-            "_Вы можете добавлять файлы .txt или .md в `alex_reading/` через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие._"
+            "📖 <b>[СОСТОЯНИЕ КОГНИТИВНЫХ ФАЙЛОВ]</b>\n\n"
+            f"📂 <b>Рабочая папка (<code>alex_workspace/</code>):</b>\n<code>{ws}</code>\n\n"
+            f"📚 <b>Очередь на чтение (<code>alex_reading/</code>):</b>\n<code>{rq}</code>\n\n"
+            "<i>Вы можете добавлять файлы .txt или .md в <code>alex_reading/</code> через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие.</i>"
         )
-        await message.answer(report, parse_mode=ParseMode.MARKDOWN)
+        await message.answer(report, parse_mode=ParseMode.HTML)
     except Exception as ex:
         logger.error(f"Error in btn_files: {ex}", exc_info=True)
         await message.answer("⚠️ Произошла ошибка при получении списка файлов.")
