@@ -249,7 +249,7 @@ async def callback_alex_cmd_log(callback: CallbackQuery):
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(query, (user_id,))
+            cursor.execute(query, (db.GLOBAL_ALEX_ID,))
             rows = cursor.fetchall()
             
         if not rows:
@@ -290,7 +290,7 @@ async def callback_alex_cmd_log(callback: CallbackQuery):
 async def callback_alex_cmd_thoughts(callback: CallbackQuery):
     user_id = callback.from_user.id
     try:
-        thoughts = db.get_thought_history(user_id, limit=5)
+        thoughts = db.get_thought_history(db.GLOBAL_ALEX_ID, limit=5)
         if not thoughts:
             await callback.message.answer("ℹ️ История мыслей Алекса пока пуста.")
             await callback.answer()
@@ -298,9 +298,16 @@ async def callback_alex_cmd_thoughts(callback: CallbackQuery):
             
         lines = ["💭 **История мыслей и рефлексии Алекса (последние 5):**\n"]
         for t in thoughts:
-            t_type = "СЛАБАЯ МЫСЛЬ" if t["thought_type"] == "weak" else "РЕФЛЕКСИЯ"
-            created_at = t["created_at"]
+            t_type = "СЛАБАЯ МЫСЛЬ"
+            if t["thought_type"] == "reflection":
+                t_type = "РЕФЛЕКСИЯ"
+            elif t["thought_type"] == "self_dialogue":
+                t_type = "САМОАНАЛИЗ / ДИАЛОГ"
+            elif t["thought_type"] == "recursive_thought":
+                t_type = "РЕКУРСИВНЫЙ ПОТОК"
+                
             content = t["thought"]
+            created_at = t["created_at"]
             time_str = format_utc_to_local(created_at)
             
             lines.append(f"⏱ `{time_str}` | 🏷 **{t_type}**\n```\n{content}\n```")
