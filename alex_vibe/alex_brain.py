@@ -1143,14 +1143,79 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str
             scored_nodes.append((score, node))
             
     scored_nodes.sort(key=lambda x: x[0], reverse=True)
-    query_matched = scored_nodes[:limit]
     
+    # 2. Spreading Activation Algorithm over LTM associations graph
     results = []
     matched_ids = set()
+    query_matched = []
     
-    for sim, node in query_matched:
-        matched_ids.add(node["id"])
+    if scored_nodes:
+        # Take up to top 2 best keyword/semantic matches as Trigger (Seed) Nodes
+        seed_nodes = scored_nodes[:2]
+        seed_ids = [item[1]["id"] for item in seed_nodes]
         
+        # Calculate dynamic decay rate d based on neurochemistry
+        base_decay = 0.75
+        d = base_decay * (0.5 + ach) * (1.2 - noradrenaline)
+        d = max(0.1, min(0.95, d))
+        logger.info(f"Spreading Activation parameters: ach={ach:.2f}, noradrenaline={noradrenaline:.2f} -> d={d:.2f}")
+        
+        # Initialize activation energy levels
+        node_map = {n["id"]: n for n in searchable_nodes}
+        A = {nid: 0.0 for nid in node_map}
+        for sid in seed_ids:
+            A[sid] = 1.0
+            
+        # Get all memory edges for the user
+        all_edges = []
+        try:
+            all_edges = db.get_ltm_edges_by_user(user_id)
+        except Exception as ee:
+            logger.error(f"Error fetching LTM edges in Spreading Activation: {ee}")
+            
+        # 3 iterations of energy propagation
+        current_activations = A.copy()
+        for _ in range(3):
+            next_activations = {nid: 0.0 for nid in A}
+            for edge in all_edges:
+                source_id = edge["source_id"]
+                target_id = edge["target_id"]
+                weight = edge.get("weight") if edge.get("weight") is not None else 0.5
+                
+                # Bi-directional activation spread
+                if source_id in current_activations and target_id in next_activations:
+                    next_activations[target_id] += current_activations[source_id] * weight * d
+                if target_id in current_activations and source_id in next_activations:
+                    next_activations[source_id] += current_activations[target_id] * weight * d
+                    
+            # Maintain seed energy levels at maximum/continuous flow
+            for sid in seed_ids:
+                next_activations[sid] = max(next_activations[sid], 1.0)
+                
+            current_activations = next_activations
+            
+        # Extract activated memories above threshold
+        threshold = 0.25
+        activated_nodes = []
+        for nid, energy in current_activations.items():
+            if energy >= threshold:
+                activated_nodes.append((energy, node_map[nid]))
+                
+        # Sort by final energy descending
+        activated_nodes.sort(key=lambda x: x[0], reverse=True)
+        query_matched = [item[1] for item in activated_nodes[:limit]]
+        matched_ids = {node["id"] for node in query_matched}
+        
+        # Hybrid Fallback: if we didn't fill the limit due to sparse connections, fill with remaining BM25
+        if len(query_matched) < limit:
+            for score, node in scored_nodes:
+                if node["id"] not in matched_ids:
+                    query_matched.append(node)
+                    matched_ids.add(node["id"])
+                    if len(query_matched) >= limit:
+                        break
+                        
+    for node in query_matched:
         # Gated updates for verified nodes only
         if node.get("verified") != 0:
             # Strengthen node itself
@@ -1159,8 +1224,8 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str
             db.update_ltm_node_strength(node["id"], new_strength)
             
             # Strengthen associated edges
-            edges = db.get_associated_edges_for_node(node["id"])
-            for edge in edges:
+            associated_edges = db.get_associated_edges_for_node(node["id"])
+            for edge in associated_edges:
                 edge_weight = edge.get("weight") if edge.get("weight") is not None else 0.0
                 new_weight = min(1.0, edge_weight + 0.35)
                 db.update_ltm_edge_weight(edge["id"], new_weight)
