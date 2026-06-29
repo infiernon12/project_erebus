@@ -259,7 +259,7 @@ async def callback_alex_cmd_log(callback: CallbackQuery):
             await callback.answer()
             return
             
-        lines = ["📊 **Последние 5 нейробиологических логов Алекса:**\n"]
+        lines = ["📊 <b>Последние 5 нейробиологических логов Алекса:</b>\n"]
         for row in rows:
             deltas = {
                 "DA": row[0], "5-HT": row[1], "NE": row[2], "ACh": row[3],
@@ -273,15 +273,16 @@ async def callback_alex_cmd_log(callback: CallbackQuery):
             for name, d in deltas.items():
                 if d and abs(d) >= 0.01:
                     sign = "+" if d > 0 else ""
-                    non_zero_deltas.append(f"{name}: `{sign}{d:.2f}`")
+                    non_zero_deltas.append(f"{name}: <code>{sign}{d:.2f}</code>")
             
             delta_summary = ", ".join(non_zero_deltas) if non_zero_deltas else "Без изменений"
             if len(trigger) > 60:
                 trigger = trigger[:57] + "..."
                 
-            lines.append(f"⏱ `{time_str}` | {delta_summary}\n└ *Триггер:* `{trigger}`")
+            escaped_trigger = html.escape(trigger)
+            lines.append(f"⏱ <code>{time_str}</code> | {delta_summary}\n└ <b>Триггер:</b> <code>{escaped_trigger}</code>")
             
-        await callback.message.answer("\n\n".join(lines), parse_mode="Markdown")
+        await callback.message.answer("\n\n".join(lines), parse_mode="HTML")
         await callback.answer()
     except Exception as e:
         logger.error(f"Error in callback_alex_cmd_log: {e}")
@@ -298,7 +299,7 @@ async def callback_alex_cmd_thoughts(callback: CallbackQuery):
             await callback.answer()
             return
             
-        lines = ["💭 **История мыслей и рефлексии Алекса (последние 5):**\n"]
+        lines = ["💭 <b>История мыслей и рефлексии Алекса (последние 5):</b>\n"]
         for t in thoughts:
             t_type = "СЛАБАЯ МЫСЛЬ"
             if t["thought_type"] == "reflection":
@@ -308,13 +309,13 @@ async def callback_alex_cmd_thoughts(callback: CallbackQuery):
             elif t["thought_type"] == "recursive_thought":
                 t_type = "РЕКУРСИВНЫЙ ПОТОК"
                 
-            content = t["thought"]
+            content = html.escape(t["thought"])
             created_at = t["created_at"]
             time_str = format_utc_to_local(created_at)
             
-            lines.append(f"⏱ `{time_str}` | 🏷 **{t_type}**\n```\n{content}\n```")
+            lines.append(f"⏱ <code>{time_str}</code> | 🏷 <b>{t_type}</b>\n<pre>{content}</pre>")
             
-        await callback.message.answer("\n\n".join(lines), parse_mode="Markdown")
+        await callback.message.answer("\n\n".join(lines), parse_mode="HTML")
         await callback.answer()
     except Exception as e:
         logger.error(f"Error in callback_alex_cmd_thoughts: {e}")
@@ -537,20 +538,20 @@ async def callback_alex_reflect(callback: CallbackQuery):
     await callback.message.answer("🧠 Инициирую процесс рефлексии (расщепленный диалог)... 💭")
     dialogue_text, should_write, msg_out = alex_brain.run_reflection(user_id)
     
+    escaped_dialogue = html.escape(dialogue_text)
     reflect_text = (
-        "💬 **[ВНУТРЕННИЙ ДИАЛОГ АЛЕКСА]:**\n"
-        "```\n"
-        f"{dialogue_text}\n"
-        "```\n"
+        "💬 <b>[ВНУТРЕННИЙ ДИАЛОГ АЛЕКСА]:</b>\n"
+        f"<pre>{escaped_dialogue}</pre>\n"
     )
     if should_write and msg_out:
-        reflect_text += f"📢 **Решение:** Алекс решил написать тебе:\n*\"{msg_out}\"*\n\n*(Сообщение отправлено)*"
+        escaped_msg_out = html.escape(msg_out)
+        reflect_text += f"📢 <b>Решение:</b> Алекс решил написать тебе:\n<i>\"{escaped_msg_out}\"</i>\n\n<i>(Сообщение отправлено)</i>"
         db.add_alex_stm(user_id, "assistant", msg_out, emotional_charge=5.0)
         db.add_message(user_id, "assistant", msg_out)
         db.update_last_interaction(user_id)
         await callback.message.answer(msg_out)
         
-    await callback.message.answer(reflect_text, parse_mode="Markdown")
+    await callback.message.answer(reflect_text, parse_mode="HTML")
     await callback.answer("Рефлексия завершена!")
 
 @dp.callback_query(F.data == "alex:sleep")
