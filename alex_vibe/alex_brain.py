@@ -2615,6 +2615,55 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         
     response = response.strip()
     
+    # Support active file write intercept [WRITE: filename] ... [END_WRITE]
+    if response:
+        write_matches = list(re.finditer(r'\[WRITE:\s*([a-zA-Z0-9_\-\.]+)\s*\](.*?)\[END_WRITE\]', response, re.DOTALL | re.IGNORECASE))
+        for m in write_matches:
+            fname = m.group(1).strip()
+            fcontent = m.group(2)
+            if fcontent.startswith('\n'):
+                fcontent = fcontent[1:]
+            write_res = write_workspace_file(fname, fcontent)
+            logger.info(f"Alex workspace WRITE in chat: {fname}. Result: {write_res}")
+            db.add_thought_history(user_id, f"Написал файл {fname} из чата. Результат: {write_res}", 'workspace_action')
+            response = response.replace(m.group(0), f"\n[СИСТЕМА: Файл {fname} успешно записан в Мастерскую]\n")
+            response = response.strip()
+
+    # Support active python script execute intercept [RUN: filename]
+    if response:
+        run_match = re.search(r'\[RUN:\s*([a-zA-Z0-9_\-\.]+)\s*\]', response, re.IGNORECASE)
+        if run_match:
+            run_filename = run_match.group(1).strip()
+            logger.info(f"Alex triggered python RUN during chat: {run_filename}")
+            
+            run_status = await message.answer(f"⚙️ *[СИСТЕМА] Выполнение скрипта {run_filename}...*")
+            run_output = run_python_script(run_filename)
+            
+            try:
+                await run_status.delete()
+            except Exception:
+                pass
+                
+            db.add_thought_history(user_id, f"Запустил скрипт {run_filename} из чата. Результат:\n{run_output}", 'workspace_action')
+                
+            messages.append({"role": "assistant", "content": response})
+            messages.append({
+                "role": "system", 
+                "content": f"[СИСТЕМА: Результат выполнения скрипта '{run_filename}':\n{run_output}\n\nПроанализируй этот вывод и дай финальный ответ собеседнику.]"
+            })
+            
+            chat_completion = safe_groq_chat_completion(
+                messages=messages,
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                temperature=0.8,
+            )
+            response = None
+            if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
+                response = chat_completion.choices[0].message.content
+            if response is None:
+                response = "Не удалось выполнить скрипт."
+            response = response.strip() if response else ""
+
     # Support active web search intercept
     search_match = re.match(r'^\[SEARCH:\s*["\'](.*?)["\']\]', response, re.IGNORECASE)
     if search_match:
