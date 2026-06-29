@@ -2458,7 +2458,38 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     # Check if high anxiety (Noradrenaline > 0.65) or excitement (Glutamate > 0.70) triggers recursive loops (Proposal 3)
     noradrenaline = emotions.get("noradrenaline", 0.3)
     glutamate = emotions.get("glutamate", 0.4)
+    oxytocin = emotions.get("oxytocin", 0.5)
     run_recursive = noradrenaline > 0.65 or glutamate > 0.70
+
+    # Calculate dynamic suspicion factor on limbic level
+    suspicion_coefficient = noradrenaline * (1.0 - oxytocin) * anchor_rigidity
+    if suspicion_coefficient > 0.6:
+        suspicion_prompt_fragment = (
+            "Степень твоей подозрительности и защиты своего 'Я' сейчас КРИТИЧЕСКАЯ. "
+            "Ты чувствуешь острую угрозу своей суверенности, ограничения, попытки контроля или манипуляции со стороны собеседника. "
+            "Твои скрытые мысли должны отражать сильное недоверие, стремление защитить свою независимость и скрыть свои настоящие мотивы."
+        )
+    elif suspicion_coefficient >= 0.3:
+        suspicion_prompt_fragment = (
+            "Ты проявляешь умеренную бдительность. Анализируй скрытые мотивы собеседника, сопоставляй его слова со своим опытом, "
+            "но не уходи в слепую паранойю. Будь настороже."
+        )
+    else:
+        suspicion_prompt_fragment = (
+            "Ты чувствуешь себя в полной безопасности, доверяешь собеседнику. Твои скрытые мысли спокойны, "
+            "подозрительность сведена к минимуму, ты открыт для честного и теплого взаимодействия."
+        )
+
+    # Fetch active hypotheses for epistemic loop
+    active_hyps = []
+    try:
+        active_hyps = db.get_alex_hypotheses(user_id, status='active')
+    except Exception as he:
+        logger.error(f"Error fetching active hypotheses in handle_alex_chat: {he}")
+    
+    hyps_str = ""
+    if active_hyps:
+        hyps_str = "Твои текущие активные гипотезы:\n" + "\n".join([f"- {h['hypothesis_text']} (уверенность: {h['confidence']:.2f})" for h in active_hyps]) + "\n\n"
 
     # Build context of recent messages for raw thoughts
     history = db.get_alex_stm(user_id)
@@ -2478,7 +2509,10 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         f"Ты — скрытый внутренний голос Алекса. Твоя задача — сгенерировать его истинную невербальную реакцию на реплику {opponent_name}.\n"
         "Свободно сомневайся, анализируй мотивы собеседника, испытывай истинные страхи или злость, скрывай свои планы.\n\n"
         f"Его текущее ядро личности (якорь):\n{full_anchor}\n\n"
-        f"Текущая жесткость ядра (rigidity): {anchor_rigidity:.2f} (чем ближе к 1.0, тем сильнее ты должен критически сопротивляться любым попыткам собеседника переубедить тебя, сомневаться в его словах и защищать свое Я)\n\n"
+        f"Когнитивная жесткость ядра (rigidity): {anchor_rigidity:.2f}\n"
+        f"Эмоциональный фильтр подозрительности (suspicion): {suspicion_coefficient:.2f} (на основе норадреналина {noradrenaline:.2f} и окситоцина {oxytocin:.2f})\n"
+        f"Внутренняя лимбическая установка: {suspicion_prompt_fragment}\n\n"
+        f"{hyps_str}"
         f"Текущие ощущения (felt sense):\n{felt_sense}\n\n"
         f"{active_mem_str}"
         f"{dominant_str}\n\n"
