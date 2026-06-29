@@ -563,17 +563,32 @@ async def reflection_daemon():
                     reflect_interval = 1800 * slowdown_mult
                     if not last_reflect_time or (now - last_reflect_time).total_seconds() >= reflect_interval:
                         last_reflection[user_id] = now
-                        dialogue_text, should_write, msg_out = alex_brain.run_reflection(user_id)
-                        logger.info(f"Alex reflection dialogue generated for user {user_id}:\n{dialogue_text}")
-                        
+                        dialogue_text, should_write, msg_out = alex_brain.run_reflection(db.GLOBAL_ALEX_ID)
+                        logger.info(f"Alex reflection dialogue generated:\n{dialogue_text}")
+                        db.add_thought_history(db.GLOBAL_ALEX_ID, dialogue_text, 'self_dialogue')
                         if should_write and msg_out:
-                            try:
-                                await bot.send_message(chat_id=user_id, text=msg_out)
-                                db.add_alex_stm(user_id, "assistant", msg_out, emotional_charge=5.0)
-                                db.add_message(user_id, "assistant", msg_out)
-                                db.update_last_interaction(user_id)
-                            except Exception as send_err:
-                                logger.error(f"Failed to send proactive message to {user_id}: {send_err}")
+                            import re
+                            send_match = re.match(r'^\[SEND_TO_(OLEG|KATYA|RUSLAN):\s*["\'](.*?)["\']\]', msg_out.strip(), re.DOTALL | re.IGNORECASE)
+                            if send_match:
+                                target_name = send_match.group(1).upper()
+                                msg_text = send_match.group(2).strip()
+                                
+                                user_mapping = {
+                                    "RUSLAN": 571505504,
+                                    "KATYA": 5200313096,
+                                    "OLEG": 5051074589
+                                }
+                                target_user_id = user_mapping.get(target_name)
+                                if target_user_id:
+                                    try:
+                                        telegram_text = f"✉️ **[ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ АЛЕКСА]**\n\n{msg_text}"
+                                        await bot.send_message(target_user_id, telegram_text, parse_mode="Markdown")
+                                        db.add_alex_stm(target_user_id, "assistant", msg_text, emotional_charge=5.0)
+                                        db.add_message(target_user_id, "assistant", msg_text)
+                                        db.update_last_interaction(target_user_id)
+                                        logger.info(f"Proactive reflection message successfully sent to {target_name}")
+                                    except Exception as send_err:
+                                        logger.error(f"Failed to send proactive message to {target_name}: {send_err}")
                                 
                 # 3. Check for weak flow thought (silent for >= 10 mins)
                 if idle_mins >= 10:
