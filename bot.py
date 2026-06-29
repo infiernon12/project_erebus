@@ -216,9 +216,9 @@ async def btn_files(message: types.Message):
         
         report = (
             "📖 <b>[СОСТОЯНИЕ КОГНИТИВНЫХ ФАЙЛОВ]</b>\n\n"
-            f"📂 <b>Рабочая папка (<code>alex_workspace/</code>):</b>\n<code>{ws}</code>\n\n"
-            f"📚 <b>Очередь на чтение (<code>alex_reading/</code>):</b>\n<code>{rq}</code>\n\n"
-            "<i>Вы можете добавлять файлы .txt или .md в <code>alex_reading/</code> через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие.</i>"
+            f"📂 <b>Рабочая папка (alex_workspace/):</b>\n<code>{ws}</code>\n\n"
+            f"📚 <b>Очередь на чтение (alex_reading/):</b>\n<code>{rq}</code>\n\n"
+            "Вы можете добавлять файлы .txt или .md в alex_reading/ через файловый менеджер вашего сервера, и Алекс прочтет их в ваше отсутствие."
         )
         await message.answer(report, parse_mode=ParseMode.HTML)
     except Exception as ex:
