@@ -93,7 +93,7 @@ def translate_neurobiology(
         
     return " ".join(symptoms)
 
-def get_prompt(felt_sense: str, anchor: str = "", journal: str = "", retrieved: list[str] = None, dominant: str = "") -> str:
+def get_prompt(felt_sense: str, anchor: str = "", journal: str = "", retrieved: list[str] = None, dominant: str = "", active_memory: list[dict] = None) -> str:
     parts = [SYSTEM_PROMPT]
     
     if anchor:
@@ -101,6 +101,10 @@ def get_prompt(felt_sense: str, anchor: str = "", journal: str = "", retrieved: 
         
     if dominant:
         parts.append(f"🎯 [КОГНИТИВНАЯ ДОМИНАНТА] (Временно доминирующий в твоем разуме очаг возбуждения. Твоя текущая главная цель, фокус внимания или вопрос. Пропускай все свои рассуждения и реплики сквозь линзу этой доминанты):\n{dominant}")
+        
+    if active_memory:
+        mem_vars = "\n".join([f"- {item['key']}: {item['val']}" for item in active_memory])
+        parts.append(f"📥 [АКТИВНАЯ РАБОЧАЯ ПАМЯТЬ СЕССИИ] (Текущие точные факты, цифры и задачи, упомянутые в диалоге):\n{mem_vars}")
         
     if journal:
         parts.append(f"📅 [ЗАПИСИ ИЗ ДНЕВНИКА ЗА ПРЕДЫДУЩИЕ ДНИ]:\n{journal}")

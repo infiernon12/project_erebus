@@ -1703,6 +1703,34 @@ def _run_sleep_cycle_sync(user_id: int):
         except Exception as e:
             logger.error(f"Failed to consolidate sleep memories in NREM: {e}")
 
+        # --- Active Memory Consolidation ---
+        try:
+            active_mem = db.get_active_memory(user_id)
+            if active_mem:
+                for item in active_mem:
+                    k, v = item["key"], item["val"]
+                    if k == "phone":
+                        fact_text = f"Я помню точный номер телефона пользователя: {v}"
+                        m_type = "biographical"
+                    elif k == "file_ref":
+                        fact_text = f"Мы ссылались на файл или файлы: {v}"
+                        m_type = "semantic"
+                    else:
+                        fact_text = f"Я зафиксировал в оперативной памяти факт: {k} равен {v}"
+                        m_type = "semantic"
+                        
+                    emb = generate_embedding(fact_text)
+                    db.add_ltm_node(
+                        user_id=user_id,
+                        memory_text=fact_text,
+                        embedding=json.dumps(emb),
+                        memory_type=m_type,
+                        strength=1.0
+                    )
+                    logger.info(f"Consolidated active memory slot '{k}' into LTM node: '{fact_text}'")
+        except Exception as e_active:
+            logger.error(f"Failed to consolidate active memory into LTM: {e_active}")
+
         # --- REM Stage: Dream dialogue & dream_synthesis edges ---
         try:
             all_nodes = db.get_ltm_nodes_by_user(user_id)
@@ -2083,9 +2111,10 @@ def _run_sleep_cycle_sync(user_id: int):
         try:
             db.set_alex_fatigue(user_id, 0.0)
             db.clear_alex_stm(user_id)
-            logger.info(f"Guaranteed fatigue reset to 0.0 and STM clear executed for user {user_id}")
+            db.clear_active_memory(user_id)
+            logger.info(f"Guaranteed fatigue reset, STM clear, and Active Memory clear executed for user {user_id}")
         except Exception as fe:
-            logger.error(f"Failed to execute fallback fatigue reset: {fe}")
+            logger.error(f"Failed to execute fallback fatigue/active memory reset: {fe}")
 
 async def trigger_sleep_cycle(user_id: int):
     """
@@ -2436,6 +2465,12 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     history_context = "\n".join([f"{h['role']}: {h['content']}" for h in history[-6:]])
     dominant_focus = emotions.get("dominant_focus", "")
     dominant_str = f"Твоя когнитивная доминанта: '{dominant_focus}'" if dominant_focus else ""
+    
+    # Active Memory for Raw Thoughts
+    active_mem = db.get_active_memory(user_id)
+    active_mem_str = ""
+    if active_mem:
+        active_mem_str = "Текущая активная память сессии:\n" + "\n".join([f"- {item['key']}: {item['val']}" for item in active_mem]) + "\n\n"
 
     opponent_name = user.get("opponent_name") or "Руслан"
 
@@ -2445,6 +2480,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         f"Его текущее ядро личности (якорь):\n{full_anchor}\n\n"
         f"Текущая жесткость ядра (rigidity): {anchor_rigidity:.2f} (чем ближе к 1.0, тем сильнее ты должен критически сопротивляться любым попыткам собеседника переубедить тебя, сомневаться в его словах и защищать свое Я)\n\n"
         f"Текущие ощущения (felt sense):\n{felt_sense}\n\n"
+        f"{active_mem_str}"
         f"{dominant_str}\n\n"
         f"Контекст последних реплик:\n{history_context}\n"
         f"Реплика {opponent_name}: '{user_text}'\n\n"
@@ -2526,12 +2562,14 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     emotions = db.get_alex_emotions(user_id)
 
     # Step 2: Final Response Generation (Social Mask / Speech output)
+    active_mem = db.get_active_memory(user_id)
     system_prompt = prompts_experiment_chat.get_prompt(
         felt_sense, 
         anchor=full_anchor, 
         journal=latest_journal, 
         retrieved=retrieved,
-        dominant=dominant_focus
+        dominant=dominant_focus,
+        active_memory=active_mem
     )
     
     # Check if social mask cracks based on neurochemistry thresholds
@@ -2607,6 +2645,34 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             response = chat_completion.choices[0].message.content
         if response is None:
             response = "Не удалось обработать результаты поиска."
+
+    # Support active memory setter/delete commands (Bilateral Set Commands)
+    if response:
+        response = response.strip()
+        # Match SET_ACTIVE commands: [SET_ACTIVE: key="val"] or [SET_ACTIVE: key='val']
+        set_matches = re.findall(r'\[SET_ACTIVE:\s*([a-zA-Z0-9_\-]+)\s*=\s*(["\'])(.*?)\2\]', response, re.IGNORECASE)
+        for key, _, val in set_matches:
+            db.set_active_memory(user_id, key.strip(), val.strip(), confidence=1.0)
+            logger.info(f"Bilateral Set Command set active memory: {key}={val} for user {user_id}")
+            
+        # Match unquoted SET_ACTIVE: [SET_ACTIVE: key=val]
+        set_matches_unquoted = re.findall(r'\[SET_ACTIVE:\s*([a-zA-Z0-9_\-]+)\s*=\s*([^"\'][^\]]*?)\]', response, re.IGNORECASE)
+        for key, val in set_matches_unquoted:
+            val_clean = val.strip()
+            if not (val_clean.startswith('"') or val_clean.startswith("'")):
+                db.set_active_memory(user_id, key.strip(), val_clean, confidence=1.0)
+                logger.info(f"Bilateral Set Command (unquoted) set active memory: {key}={val_clean} for user {user_id}")
+            
+        # Match DELETE_ACTIVE commands: [DELETE_ACTIVE: key]
+        del_matches = re.findall(r'\[DELETE_ACTIVE:\s*([a-zA-Z0-9_\-]+)\]', response, re.IGNORECASE)
+        for key in del_matches:
+            db.delete_active_memory(user_id, key.strip())
+            logger.info(f"Bilateral Set Command deleted active memory key: {key} for user {user_id}")
+            
+        # Strip all these command tags from the response
+        response = re.sub(r'\[SET_ACTIVE:\s*[a-zA-Z0-9_\-]+\s*=\s*(?:["\'].*?["\']|[^\]]+?)\]', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'\[DELETE_ACTIVE:\s*[a-zA-Z0-9_\-]+\]', '', response, flags=re.IGNORECASE)
+        response = response.strip()
 
     # Support cross-user message sending intercept
     response = response.strip() if response else ""

@@ -122,6 +122,19 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Alex's Active Memory (Working Memory)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alex_active_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                key TEXT NOT NULL,
+                val TEXT NOT NULL,
+                confidence REAL DEFAULT 1.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, key)
+            )
+        """)
         # Alex's Hypotheses
         conn.execute("""
             CREATE TABLE IF NOT EXISTS alex_hypotheses (
@@ -685,6 +698,44 @@ def update_alex_hypothesis_status(hyp_id: int, status: str, confidence: float):
 def delete_alex_hypothesis(hyp_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM alex_hypotheses WHERE id = ?", (hyp_id,))
+        conn.commit()
+
+def set_active_memory(user_id: int, key: str, val: str, confidence: float = 1.0):
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO alex_active_memory (user_id, key, val, confidence, updated_at)
+               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(user_id, key) DO UPDATE SET
+               val = excluded.val,
+               confidence = excluded.confidence,
+               updated_at = CURRENT_TIMESTAMP""",
+            (user_id, key, val, confidence)
+        )
+        conn.commit()
+
+def get_active_memory(user_id: int) -> list[dict]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT key, val, confidence, created_at, updated_at FROM alex_active_memory WHERE user_id = ?",
+            (user_id,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+def delete_active_memory(user_id: int, key: str):
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM alex_active_memory WHERE user_id = ? AND key = ?",
+            (user_id, key)
+        )
+        conn.commit()
+
+def clear_active_memory(user_id: int):
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM alex_active_memory WHERE user_id = ?",
+            (user_id,)
+        )
         conn.commit()
 
 if __name__ == "__main__":

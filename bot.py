@@ -631,6 +631,23 @@ async def chat_handler(message: types.Message):
         db.register_user(user_id, message.from_user.username, message.from_user.first_name)
         user = db.get_user(user_id)
         
+    # Local Regex Preprocessor for Active Memory
+    if user_text:
+        import re
+        # Extract phone numbers (+79991234567, 8-999-123-45-67, etc.)
+        phone_match = re.search(r'\+?[78][\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', user_text)
+        if phone_match:
+            phone_val = phone_match.group(0).strip()
+            db.set_active_memory(user_id, "phone", phone_val, confidence=1.0)
+            logger.info(f"Local preprocessor extracted phone: {phone_val} for user {user_id}")
+            
+        # Extract file references (.txt, .md, .py)
+        file_matches = re.findall(r'\b[a-zA-Z0-9_\-\./]+\.(?:txt|md|py)\b', user_text)
+        if file_matches:
+            files_str = ", ".join(file_matches)
+            db.set_active_memory(user_id, "file_ref", files_str, confidence=1.0)
+            logger.info(f"Local preprocessor extracted file_ref: {files_str} for user {user_id}")
+
     status_msg = await message.answer("🧠 *Алекс думает...*")
     try:
         await alex_brain.handle_alex_chat(message, dict(user), user_text, status_msg)
