@@ -290,10 +290,8 @@ def get_alex_emotions(user_id: int) -> dict:
     merged = dict(global_emotions)
     merged["oxytocin"] = relational_emotions["oxytocin"]
     merged["noradrenaline"] = relational_emotions["noradrenaline"]
-    merged["serotonin"] = relational_emotions["serotonin"]
     merged["base_oxytocin"] = relational_emotions["base_oxytocin"]
     merged["base_noradrenaline"] = relational_emotions["base_noradrenaline"]
-    merged["base_serotonin"] = relational_emotions["base_serotonin"]
     return merged
 
 def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: str):
@@ -454,7 +452,7 @@ def update_alex_emotions_and_fatigue(
         _update_alex_emotions_and_fatigue_raw(
             user_id=GLOBAL_ALEX_ID,
             dopamine_delta=dopamine_delta,
-            serotonin_delta=0.0,
+            serotonin_delta=serotonin_delta,
             noradrenaline_delta=0.0,
             acetylcholine_delta=acetylcholine_delta,
             gaba_delta=gaba_delta,
@@ -467,7 +465,7 @@ def update_alex_emotions_and_fatigue(
         _update_alex_emotions_and_fatigue_raw(
             user_id=user_id,
             dopamine_delta=0.0,
-            serotonin_delta=serotonin_delta,
+            serotonin_delta=0.0,
             noradrenaline_delta=noradrenaline_delta,
             acetylcholine_delta=0.0,
             gaba_delta=0.0,
