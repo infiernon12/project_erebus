@@ -45,6 +45,14 @@ def list_workspace_files() -> dict:
 
 def read_workspace_file(filename: str, from_reading: bool = False) -> str:
     """Reads a file from workspace or reading queue."""
+    filename = filename.replace("\\", "/")
+    if filename.startswith("alex_reading/"):
+        filename = filename[len("alex_reading/"):]
+        from_reading = True
+    elif filename.startswith("alex_workspace/"):
+        filename = filename[len("alex_workspace/"):]
+        from_reading = False
+
     folder = READING_DIR if from_reading else WORKSPACE_DIR
     filepath = os.path.join(folder, filename)
     if not os.path.abspath(filepath).startswith(os.path.abspath(folder)):
@@ -951,6 +959,11 @@ def run_autonomous_workspace_cycle(user_id: int) -> str:
         data = extract_json(completion.choices[0].message.content)
         action = data.get("action", "IDLE")
         filename = data.get("filename", "").strip()
+        filename = filename.replace("\\", "/")
+        if filename.startswith("alex_reading/"):
+            filename = filename[len("alex_reading/"):]
+        elif filename.startswith("alex_workspace/"):
+            filename = filename[len("alex_workspace/"):]
         content = data.get("content", "")
         rationale = data.get("thought_rationale", "")
         
@@ -2612,7 +2625,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         
         if target_user_id:
             try:
-                telegram_text = f"✉️ **[ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ АЛЕКСА]**\n\n{msg_text}"
+                telegram_text = msg_text
                 await message.bot.send_message(target_user_id, telegram_text, parse_mode="Markdown")
                 
                 # Check target user registration

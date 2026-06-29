@@ -589,7 +589,7 @@ async def reflection_daemon():
                                 target_user_id = user_mapping.get(target_name)
                                 if target_user_id:
                                     try:
-                                        telegram_text = f"✉️ **[ВХОДЯЩЕЕ СООБЩЕНИЕ ОТ АЛЕКСА]**\n\n{msg_text}"
+                                        telegram_text = msg_text
                                         await bot.send_message(target_user_id, telegram_text, parse_mode="Markdown")
                                         db.add_alex_stm(target_user_id, "assistant", msg_text, emotional_charge=5.0)
                                         db.add_message(target_user_id, "assistant", msg_text)
