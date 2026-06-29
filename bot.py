@@ -175,7 +175,7 @@ async def cmd_status(message: types.Message):
         f"📥 Кратковременных воспоминаний (STM): `{len(stm_list)}`\n"
         f"💾 Долговременных синапсов (LTM Nodes): `{len(ltm_list)}`\n"
         f"🔗 Ассоциативных связей (LTM Edges): `{len(ltm_edges)}`\n"
-        f"🕒 Последняя активность: `{emotions['last_interaction']}`"
+        f"🕒 Последняя активность: `{format_utc_to_local(emotions['last_interaction'])}`"
     )
     
     inline_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -502,9 +502,11 @@ async def reflection_daemon():
     and automatic sleep cycles when user is absent.
     """
     logger.info("Alex background reflection daemon started.")
+    active_sleep_users = set()
     while True:
         await asyncio.sleep(10)
         now = datetime.now()
+        now_utc = datetime.utcnow()
         if alex_brain.API_COOLDOWN_UNTIL and now < alex_brain.API_COOLDOWN_UNTIL:
             continue
             
@@ -521,7 +523,7 @@ async def reflection_daemon():
                 
                 try:
                     last_dt = datetime.strptime(emotions["last_interaction"].split(".")[0], "%Y-%m-%d %H:%M:%S")
-                    idle_mins = int((now - last_dt).total_seconds() / 60)
+                    idle_mins = int((now_utc - last_dt).total_seconds() / 60)
                 except Exception as parse_err:
                     logger.warning(f"Error parsing last_interaction for {user_id}: {parse_err}")
                     continue
@@ -550,14 +552,24 @@ async def reflection_daemon():
                 
                 # 1. Check for automatic sleep (silent for >= 60 mins and fatigue >= 40%, or inactive with pending STM)
                 if should_sleep:
-                    asyncio.create_task(alex_brain.trigger_sleep_cycle(user_id))
-                    try:
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text="💤 **[СИСТЕМА]** Сознание Алекса прошло автоматический цикл сна (консолидация кратковременной памяти, сброс утомления и аллостатическая адаптация baselines)."
-                        )
-                    except Exception as msg_err:
-                        logger.warning(f"Failed to send sleep auto-msg to {user_id}: {msg_err}")
+                    if user_id in active_sleep_users:
+                        continue
+                    active_sleep_users.add(user_id)
+                    
+                    async def run_sleep_and_clean(uid):
+                        try:
+                            await alex_brain.trigger_sleep_cycle(uid)
+                            try:
+                                await bot.send_message(
+                                    chat_id=uid,
+                                    text="💤 **[СИСТЕМА]** Сознание Алекса прошло автоматический цикл сна (консолидация кратковременной памяти, сброс утомления и аллостатическая адаптация baselines)."
+                                )
+                            except Exception as msg_err:
+                                logger.warning(f"Failed to send sleep auto-msg to {uid}: {msg_err}")
+                        finally:
+                            active_sleep_users.remove(uid)
+                            
+                    asyncio.create_task(run_sleep_and_clean(user_id))
                     continue
                 
                 # If this is not the global identity, skip proactive thoughts and weak thoughts
