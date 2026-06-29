@@ -169,6 +169,12 @@ def get_user(user_id: int):
         cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         return cursor.fetchone()
 
+def get_all_users() -> list[dict]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, opponent_name FROM users")
+        return [dict(row) for row in cursor.fetchall()]
+
 def register_user(user_id: int, username: str = None, opponent_name: str = None) -> bool:
     if get_user(user_id):
         return False

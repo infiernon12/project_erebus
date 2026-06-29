@@ -502,8 +502,12 @@ async def reflection_daemon():
             continue
             
         try:
-            user_ids = [db.GLOBAL_ALEX_ID]
-            for user_id in user_ids:
+            users_list = db.get_all_users()
+            all_user_ids = [u["user_id"] for u in users_list] if users_list else []
+            if db.GLOBAL_ALEX_ID not in all_user_ids:
+                all_user_ids.append(db.GLOBAL_ALEX_ID)
+                
+            for user_id in all_user_ids:
                 emotions = db.get_alex_emotions(user_id)
                 if not emotions or not emotions.get("last_interaction"):
                     continue
@@ -522,8 +526,23 @@ async def reflection_daemon():
                     slowdown_mult = 1.0 + ((idle_mins - 180) / 120.0) ** 1.2
                     slowdown_mult = min(12.0, slowdown_mult)
                 
-                # 1. Check for automatic sleep (silent for >= 60 mins and fatigue >= 40%)
+                # Check if this user has pending STM logs
+                has_pending_stm = False
+                try:
+                    pending = db.get_alex_stm(user_id, limit=1)
+                    if pending:
+                        has_pending_stm = True
+                except Exception as stm_err:
+                    logger.warning(f"Error checking pending STM for {user_id}: {stm_err}")
+                
+                should_sleep = False
                 if idle_mins >= 60 and emotions["fatigue"] >= 40.0:
+                    should_sleep = True
+                elif idle_mins >= 180 and has_pending_stm:
+                    should_sleep = True
+                
+                # 1. Check for automatic sleep (silent for >= 60 mins and fatigue >= 40%, or inactive with pending STM)
+                if should_sleep:
                     asyncio.create_task(alex_brain.trigger_sleep_cycle(user_id))
                     try:
                         await bot.send_message(
@@ -532,6 +551,10 @@ async def reflection_daemon():
                         )
                     except Exception as msg_err:
                         logger.warning(f"Failed to send sleep auto-msg to {user_id}: {msg_err}")
+                    continue
+                
+                # If this is not the global identity, skip proactive thoughts and weak thoughts
+                if user_id != db.GLOBAL_ALEX_ID:
                     continue
                 
                 # 2. Check for reflection (silent for >= 30 mins)
