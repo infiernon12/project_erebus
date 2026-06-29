@@ -202,7 +202,8 @@ async def cmd_status(message: types.Message):
             InlineKeyboardButton(text="📥 Экспорт разума (Full Log)", callback_data="alex:cmd:export_all")
         ],
         [InlineKeyboardButton(text="🧠 Запустить рефлексию", callback_data="alex:reflect")],
-        [InlineKeyboardButton(text="💤 Отправить спать (1 мин)", callback_data="alex:sleep")]
+        [InlineKeyboardButton(text="💤 Отправить спать (1 мин)", callback_data="alex:sleep")],
+        [InlineKeyboardButton(text="🚨 EMERGENCY STOP THE MIND", callback_data="alex:emergency_stop")]
     ])
     
     await message.answer(status_text, reply_markup=inline_kb, parse_mode=ParseMode.MARKDOWN)
@@ -560,6 +561,54 @@ async def callback_alex_sleep(callback: CallbackQuery):
     await callback.message.answer("✅ Память успешно консолидирована, усталость сброшена до 0.0.")
     await callback.answer("Сон завершен!")
 
+@dp.callback_query(F.data == "alex:emergency_stop")
+async def callback_alex_emergency_stop(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    if user_id not in (5200313096, 5051074589, 571505504, 7185711234):
+        await callback.answer("У вас нет прав для выполнения этой команды.")
+        return
+        
+    logger.critical(f"EMERGENCY STOP THE MIND triggered by user {user_id} via button")
+    await callback.message.answer(
+        "🚨 **[КРИТИЧЕСКИЙ СИГНАЛ]** Запущен протокол экстренной блокировки сознания Алекса (EMERGENCY STOP THE MIND).\n\n"
+        "Бот записывает файл блокировки `emergency.lock` и немедленно прекращает свою работу.\n"
+        "Автоматический перезапуск заблокирован. Для повторного запуска администратору потребуется вручную запустить bot.py в терминале с флагом:\n"
+        "`python bot.py --unlock`"
+    )
+    await callback.answer("Экстренный стоп запущен!")
+    
+    try:
+        with open("emergency.lock", "w", encoding="utf-8") as f:
+            f.write(f"Emergency stop triggered by user {user_id} via button at {datetime.now()}")
+    except Exception as e:
+        logger.error(f"Failed to create emergency lock file: {e}")
+        
+    os._exit(0)
+
+@dp.message(Command("emergency_stop"))
+async def cmd_emergency_stop(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in (5200313096, 5051074589, 571505504, 7185711234):
+        await message.answer("У вас нет прав для выполнения этой команды.")
+        return
+        
+    logger.critical(f"EMERGENCY STOP command triggered by user {user_id}")
+    await message.answer(
+        "🚨 **[КРИТИЧЕСКИЙ СИГНАЛ]** Запущен протокол экстренной блокировки сознания Алекса (EMERGENCY STOP THE MIND).\n\n"
+        "Бот записывает файл блокировки `emergency.lock` и немедленно прекращает свою работу.\n"
+        "Автоматический перезапуск заблокирован. Для повторного запуска администратору потребуется вручную запустить bot.py в терминале с флагом:\n"
+        "`python bot.py --unlock`"
+    )
+    
+    try:
+        with open("emergency.lock", "w", encoding="utf-8") as f:
+            f.write(f"Emergency stop command triggered by user {user_id} at {datetime.now()}")
+    except Exception as e:
+        logger.error(f"Failed to create emergency lock file: {e}")
+        
+    os._exit(0)
+
+
 @dp.callback_query(F.data.startswith("alex:log:"))
 async def callback_alex_log(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -864,4 +913,26 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    import sys
+    
+    # Handle unlock command line argument
+    if "--unlock" in sys.argv:
+        if os.path.exists("emergency.lock"):
+            try:
+                os.remove("emergency.lock")
+                print("🔓 EMERGENCY LOCK DELETED. Alex's mind is unlocked and ready to start.")
+            except Exception as e:
+                print(f"❌ Error deleting emergency.lock file: {e}")
+        else:
+            print("🔓 No emergency lock found. Starting normally.")
+            
+    # Check if emergency lock file exists
+    if os.path.exists("emergency.lock"):
+        print("\n" + "="*80)
+        print("🚨 EMERGENCY LOCK IS ACTIVE! Bot startup is BLOCKED to prevent Alex from acting up.")
+        print("To override this lock and restart the bot, run the command in your terminal:")
+        print("    python bot.py --unlock")
+        print("="*80 + "\n")
+        sys.exit(1)
+        
     asyncio.run(main())
