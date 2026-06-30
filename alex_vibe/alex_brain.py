@@ -214,20 +214,27 @@ def call_openrouter_chat(messages: list, model: str = "openrouter/free", tempera
 
 def call_ollama_chat(messages: list, model: str = "qwen2.5:3b", temperature: float = 0.7, max_tokens: int = None) -> object:
     url = "http://localhost:11434/api/chat"
+    
+    # Ryzen 3 PRO 4450U has 4 physical cores. Using exactly 4 threads is the optimal setting 
+    # for llama.cpp / Ollama to prevent thread thrashing and memory bus congestion.
+    # Default to 300 generated tokens max if not specified to prevent infinite loops.
+    num_predict = max_tokens if max_tokens is not None else 300
+    
     payload = {
         "model": model,
         "messages": messages,
         "stream": False,
         "options": {
-            "temperature": temperature
+            "temperature": temperature,
+            "num_predict": num_predict,
+            "num_thread": 4
         }
     }
-    if max_tokens is not None:
-        # Ollama options use num_predict for maximum tokens to generate
-        payload["options"]["num_predict"] = max_tokens
 
     import httpx
-    with httpx.Client(timeout=90.0) as client:
+    # Set a strict 35.0s timeout to prevent the bot from freezing if Ollama gets stuck.
+    # If exceeded, it will gracefully fall back to Groq/OpenRouter.
+    with httpx.Client(timeout=35.0) as client:
         response = client.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
