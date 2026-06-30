@@ -67,12 +67,23 @@ def read_workspace_file(filename: str, from_reading: bool = False) -> str:
 
 def write_workspace_file(filename: str, content: str) -> str:
     """Writes content to a file in alex_workspace."""
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        first_line_end = cleaned.find("\n")
+        if first_line_end != -1:
+            cleaned = cleaned[first_line_end + 1:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+    else:
+        cleaned = content
+
     filepath = os.path.join(WORKSPACE_DIR, filename)
     if not os.path.abspath(filepath).startswith(os.path.abspath(WORKSPACE_DIR)):
         return "Ошибка: доступ запрещен."
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
+            f.write(cleaned)
         return f"Файл {filename} успешно записан."
     except Exception as e:
         return f"Ошибка при записи файла: {e}"
@@ -300,7 +311,10 @@ def get_sentence_transformer():
     if _sentence_transformer_model is None:
         from sentence_transformers import SentenceTransformer
         logger.info("Loading sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 onto CPU...")
-        _sentence_transformer_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+        _sentence_transformer_model = SentenceTransformer(
+            'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+            local_files_only=True
+        )
     return _sentence_transformer_model
 
 def generate_embedding(text: str) -> list[float]:
