@@ -201,7 +201,49 @@ def call_openrouter_chat(messages: list, model: str = "openrouter/free", tempera
     logger.error("All OpenRouter candidate models failed.")
     raise last_err
 
+def call_ollama_chat(messages: list, model: str = "qwen2.5:3b", temperature: float = 0.7, max_tokens: int = None) -> object:
+    url = "http://localhost:11434/api/chat"
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {
+            "temperature": temperature
+        }
+    }
+    if max_tokens is not None:
+        # Ollama options use num_predict for maximum tokens to generate
+        payload["options"]["num_predict"] = max_tokens
+
+    import httpx
+    with httpx.Client(timeout=90.0) as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        
+        content = data["message"]["content"]
+        
+        class MockMessage:
+            def __init__(self, content):
+                self.content = content
+        class MockChoice:
+            def __init__(self, content):
+                self.message = MockMessage(content)
+        class MockCompletion:
+            def __init__(self, content):
+                self.choices = [MockChoice(content)]
+        
+        return MockCompletion(content)
+
 def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None):
+    # Try local Ollama first
+    try:
+        local_model = "qwen2.5:3b"
+        logger.info(f"Attempting local Ollama completion (model: {local_model})...")
+        return call_ollama_chat(messages, local_model, temperature, max_tokens)
+    except Exception as ollama_err:
+        logger.warning(f"Local Ollama completion failed: {ollama_err}. Falling back to Groq...")
+
     primary = groq_client_primary
     if type(groq_client).__name__ in ("MagicMock", "Mock"):
         primary = groq_client
