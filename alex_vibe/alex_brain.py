@@ -235,8 +235,7 @@ ROM_IDENTITY_CONSTANTS = (
 )
 
 # Hashing-based local fallback for text embeddings
-def get_local_embedding(text: str) -> list[float]:
-    dims = 128
+def get_local_embedding(text: str, dims: int = 384) -> list[float]:
     vec = [0.0] * dims
     words = text.lower().split()
     if not words:
@@ -252,19 +251,27 @@ def get_local_embedding(text: str) -> list[float]:
         vec = [x / norm for x in vec]
     return vec
 
+_sentence_transformer_model = None
+
+def get_sentence_transformer():
+    global _sentence_transformer_model
+    if _sentence_transformer_model is None:
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 onto CPU...")
+        _sentence_transformer_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+    return _sentence_transformer_model
+
 def generate_embedding(text: str) -> list[float]:
-    """Generates embedding for LTM associative search. Falls back to deterministic local hashing on failure."""
+    """Generates embedding for LTM associative search using a local SentenceTransformer model."""
     if not text.strip():
-        return [0.0] * 128
+        return [0.0] * 384
     try:
-        response = groq_client.embeddings.create(
-            model="nomic-embed-text-v1.5",
-            input=text
-        )
-        return response.data[0].embedding
+        model = get_sentence_transformer()
+        emb = model.encode(text)
+        return emb.tolist()
     except Exception as e:
-        logger.warning(f"Failed to fetch Groq embeddings, falling back to local hashing: {e}")
-        return get_local_embedding(text)
+        logger.error(f"Failed to generate local SentenceTransformer embedding: {e}")
+        return get_local_embedding(text, dims=384)
 
 def get_alex_anchor(user_id: int) -> str:
     """Retrieves the dynamic anchor from DB. Seeds the default human identity if it doesn't exist."""
