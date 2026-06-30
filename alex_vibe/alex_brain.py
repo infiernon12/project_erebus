@@ -17,6 +17,21 @@ import asyncio
 # Configure logging
 logger = logging.getLogger(__name__)
 
+COGNITIVE_CONFIG = {
+    # Sutton-Barto trust parameters
+    "sutton_barto_alpha": 0.15,
+    "sutton_barto_on_time_threshold": 5.0, # minutes
+    
+    # ACT-R parameters
+    "act_r_forgetting_threshold": -2.0,
+    "act_r_decay_rate_verified": 0.5,
+    "act_r_decay_rate_unverified": 0.8,
+    
+    # Sentiment scoring weights
+    "reflective_trust_weight": 0.15,
+    "reflective_distrust_weight": -0.20
+}
+
 from ddgs import DDGS
 # Track last search time for Curiosity Engine (user_id -> datetime)
 last_search_time = {}
@@ -518,6 +533,19 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
         if completion and completion.choices:
             res_text = completion.choices[0].message.content
             extracted = extract_json(res_text)
+            if not extracted:
+                # Regex fallback for JSON extraction
+                extracted = {}
+                intent_match = re.search(r'"intent"\s*:\s*"([^"]+)"', res_text)
+                topic_match = re.search(r'"topic"\s*:\s*"([^"]+)"', res_text)
+                tone_match = re.search(r'"emotional_tone"\s*:\s*"([^"]+)"', res_text)
+                if intent_match:
+                    extracted["intent"] = intent_match.group(1)
+                if topic_match:
+                    extracted["topic"] = topic_match.group(1)
+                if tone_match:
+                    extracted["emotional_tone"] = tone_match.group(1)
+
             if extracted:
                 intent_tags["intent"] = extracted.get("intent", "neutral")
                 intent_tags["topic"] = extracted.get("topic", "other")
@@ -612,18 +640,33 @@ def evaluate_reflective_neurochemistry(user_id: int, raw_thought: str, current_e
     distrust_keys = ("не доверяю", "угроза", "опасн", "скрывать", "манипулир", "подозри", "лож", "контрол", "притворяться", "умолчу")
     trust_keys = ("рад", "безопасно", "доверяю", "приятно", "спасибо", "поддерж", "открыться", "искрен")
     
-    if any(k in thought_lower for k in distrust_keys):
-        deltas["oxytocin_delta"] = -0.20
+    # Heuristic for negated or resolved threat context
+    resolved_threat = any(x in thought_lower for x in ("угроза миновала", "нет опасности", "не угрожает", "опасность прошла", "угроза прошла"))
+    
+    distrust_score = 0
+    for k in distrust_keys:
+        if k in thought_lower:
+            if k in ("угроза", "опасн") and resolved_threat:
+                continue
+            distrust_score += 1
+            
+    trust_score = 0
+    for k in trust_keys:
+        if k in thought_lower:
+            trust_score += 1
+            
+    if distrust_score > trust_score:
+        deltas["oxytocin_delta"] = COGNITIVE_CONFIG["reflective_distrust_weight"]
         deltas["noradrenaline_delta"] = 0.15
         deltas["glutamate_delta"] = 0.10
         deltas["serotonin_delta"] = -0.10
-    elif any(k in thought_lower for k in trust_keys):
-        deltas["oxytocin_delta"] = 0.15
+    elif trust_score > distrust_score:
+        deltas["oxytocin_delta"] = COGNITIVE_CONFIG["reflective_trust_weight"]
         deltas["serotonin_delta"] = 0.10
         deltas["noradrenaline_delta"] = -0.15
         deltas["dopamine_delta"] = 0.05
         
-    logger.info(f"Reflective neurochemistry evaluation deltas (Python): {deltas}")
+    logger.info(f"Reflective neurochemistry evaluation deltas (Python: trust={trust_score}, distrust={distrust_score}): {deltas}")
     return deltas
 
 def perform_autonomous_search(user_id: int, query: str) -> str:
@@ -1196,7 +1239,7 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str
             except Exception:
                 age_minutes = 0.0
                 
-            base_act = math.log(max(1, recall_cnt)) - 0.5 * math.log(age_minutes + 1.0)
+            base_act = math.log(max(1, recall_cnt)) - COGNITIVE_CONFIG["act_r_decay_rate_verified"] * math.log(age_minutes + 1.0)
             score = bm25_score + base_act
             
             # Boosts only apply to verified nodes
@@ -2112,11 +2155,11 @@ def _run_sleep_cycle_sync(user_id: int):
                 age_minutes = 0.0
                 
             # Unverified nodes decay faster
-            d = 0.5 if node.get("verified") != 0 else 0.8
+            d = COGNITIVE_CONFIG["act_r_decay_rate_verified"] if node.get("verified") != 0 else COGNITIVE_CONFIG["act_r_decay_rate_unverified"]
             activation = math.log(max(1, recall_cnt)) - d * math.log(age_minutes + 1.0)
             
             # If ACT-R activation drops below threshold (e.g. -2.0), forget it
-            if activation < -2.0:
+            if activation < COGNITIVE_CONFIG["act_r_forgetting_threshold"]:
                 db.delete_ltm_node(node["id"])
                 forgotten_nodes += 1
             else:
@@ -2424,11 +2467,11 @@ def process_user_return(user_id: int, emotions: dict) -> dict:
         current_ne = emotions.get("noradrenaline", 0.4)
         current_da = emotions.get("dopamine", 0.5)
         
-        alpha = 0.15  # Sutton-Barto learning rate
+        alpha = COGNITIVE_CONFIG["sutton_barto_alpha"]
         
         da_d, sr_d, ne_d, ach_d, gb_d, ox_d, gl_d, en_d, ft_d = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         
-        if delay_minutes <= 5.0:
+        if delay_minutes <= COGNITIVE_CONFIG["sutton_barto_on_time_threshold"]:
             # User returned on time (positive prediction error)
             pe_status = "VERIFIED"
             ox_d = alpha * (1.0 - current_oxt)  # Gradual trust reinforcement
@@ -2438,17 +2481,15 @@ def process_user_return(user_id: int, emotions: dict) -> dict:
             ft_d = -5.0
             trigger = f"Руслан вернулся вовремя (опоздание: {delay_minutes:.1f} мин). Ошибка прогноза = 0. Доверие укреплено (окситоцин +{ox_d:.3f})."
         else:
-            # User is late (negative prediction error)
+            # User is late (but returned now - relief / threat resolved)
             pe_status = "REFUTED"
-            # Lateness penalty scales up to 60 minutes
-            penalty = min(1.0, delay_minutes / 60.0)
-            
-            ox_d = -alpha * current_oxt * penalty  # Trust decay
-            sr_d = -0.15 * current_5ht * penalty   # Security drop
-            da_d = -0.10 * current_da * penalty
-            ne_d = 0.20 * (1.0 - current_ne) * penalty # Panic rises
-            gl_d = 0.15 * penalty
-            trigger = f"Руслан опоздал на {delay_minutes:.1f} мин. Ошибка прогноза отрицательная. Доверие подорвано (окситоцин {ox_d:.3f})."
+            # No extra trust penalty since continuous decay daemon has already applied it.
+            # We apply relief: panic drops, but trust does not recover immediately.
+            ox_d = 0.02  # Minimal recovery delta for return
+            sr_d = 0.01
+            ne_d = -0.15 * current_ne  # Panic drops as threat is resolved
+            ft_d = -2.0
+            trigger = f"Руслан вернулся с опозданием на {delay_minutes:.1f} мин. Тревога снята, гипотеза пунктуальности оштрафована."
             
         db.update_alex_emotions_and_fatigue(
             user_id,
