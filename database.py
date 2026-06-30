@@ -1,6 +1,9 @@
 import sqlite3
 import os
+import math
+from datetime import datetime, timezone
 
+UTC = timezone.utc
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
 GLOBAL_ALEX_ID = 571505504
 TESTING = False
@@ -86,6 +89,7 @@ def init_db():
                 rigidity REAL DEFAULT 0.5,
                 source TEXT DEFAULT 'ego',
                 verified INTEGER DEFAULT 1,
+                recall_count INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -175,6 +179,18 @@ def init_db():
             )
         """)
         conn.commit()
+
+        # Migration: add recall_count to alex_ltm_nodes if it does not exist
+        try:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(alex_ltm_nodes)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "recall_count" not in columns:
+                conn.execute("ALTER TABLE alex_ltm_nodes ADD COLUMN recall_count INTEGER DEFAULT 1")
+                conn.commit()
+                print("Database migration: Added recall_count column to alex_ltm_nodes table.")
+        except Exception as e:
+            print(f"Error running database migration: {e}")
 
 def get_user(user_id: int):
     with get_connection() as conn:
@@ -365,32 +381,52 @@ def _update_alex_emotions_and_fatigue_raw(
 ):
     current = _get_alex_emotions_row(user_id)
     
-    new_da = current["dopamine"] + dopamine_delta
-    new_5ht = current["serotonin"] + serotonin_delta
-    new_ne = current["noradrenaline"] + noradrenaline_delta
-    new_ach = current["acetylcholine"] + acetylcholine_delta
-    new_gaba = current["gaba"] + gaba_delta
-    new_oxt = current["oxytocin"] + oxytocin_delta
-    new_glu = current["glutamate"] + glutamate_delta
-    new_end = current["endorphins"] + endorphins_delta
+    # Calculate dt_minutes elapsed since last_interaction
+    last_int_str = current.get("last_interaction")
+    dt_minutes = 0.0
+    if last_int_str:
+        try:
+            # SQLite CURRENT_TIMESTAMP is in UTC and format is 'YYYY-MM-DD HH:MM:SS'
+            last_dt = datetime.strptime(last_int_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+            now = datetime.now(UTC)
+            dt_minutes = (now - last_dt).total_seconds() / 60.0
+            if dt_minutes < 0:
+                dt_minutes = 0.0
+        except Exception:
+            pass
+            
+    # Define decay rates per minute (from NEURO_DECAY scaled down, e.g. dopamine_decay = 0.01)
+    decay_rates_per_minute = {
+        "dopamine": 0.01,
+        "serotonin": 0.01,
+        "noradrenaline": 0.015,
+        "acetylcholine": 0.01,
+        "gaba": 0.01,
+        "oxytocin": 0.008,
+        "glutamate": 0.012,
+        "endorphins": 0.02
+    }
     
-    new_da -= NEURO_DECAY["dopamine"] * (new_da - current["base_dopamine"])
-    new_5ht -= NEURO_DECAY["serotonin"] * (new_5ht - current["base_serotonin"])
-    new_ne -= NEURO_DECAY["noradrenaline"] * (new_ne - current["base_noradrenaline"])
-    new_ach -= NEURO_DECAY["acetylcholine"] * (new_ach - current["base_acetylcholine"])
-    new_gaba -= NEURO_DECAY["gaba"] * (new_gaba - current["base_gaba"])
-    new_oxt -= NEURO_DECAY["oxytocin"] * (new_oxt - current["base_oxytocin"])
-    new_glu -= NEURO_DECAY["glutamate"] * (new_glu - current["base_glutamate"])
-    new_end -= NEURO_DECAY["endorphins"] * (new_end - current["base_endorphins"])
+    def decay_value(val, base, lambda_val, dt):
+        return base + (val - base) * math.exp(-lambda_val * dt)
+        
+    decay_da = decay_value(current["dopamine"], current["base_dopamine"], decay_rates_per_minute["dopamine"], dt_minutes)
+    decay_5ht = decay_value(current["serotonin"], current["base_serotonin"], decay_rates_per_minute["serotonin"], dt_minutes)
+    decay_ne = decay_value(current["noradrenaline"], current["base_noradrenaline"], decay_rates_per_minute["noradrenaline"], dt_minutes)
+    decay_ach = decay_value(current["acetylcholine"], current["base_acetylcholine"], decay_rates_per_minute["acetylcholine"], dt_minutes)
+    decay_gaba = decay_value(current["gaba"], current["base_gaba"], decay_rates_per_minute["gaba"], dt_minutes)
+    decay_oxt = decay_value(current["oxytocin"], current["base_oxytocin"], decay_rates_per_minute["oxytocin"], dt_minutes)
+    decay_glu = decay_value(current["glutamate"], current["base_glutamate"], decay_rates_per_minute["glutamate"], dt_minutes)
+    decay_end = decay_value(current["endorphins"], current["base_endorphins"], decay_rates_per_minute["endorphins"], dt_minutes)
     
-    new_da = max(0.0, min(1.0, new_da))
-    new_5ht = max(0.0, min(1.0, new_5ht))
-    new_ne = max(0.0, min(1.0, new_ne))
-    new_ach = max(0.0, min(1.0, new_ach))
-    new_gaba = max(0.0, min(1.0, new_gaba))
-    new_oxt = max(0.0, min(1.0, new_oxt))
-    new_glu = max(0.0, min(1.0, new_glu))
-    new_end = max(0.0, min(1.0, new_end))
+    new_da = max(0.0, min(1.0, decay_da + dopamine_delta))
+    new_5ht = max(0.0, min(1.0, decay_5ht + serotonin_delta))
+    new_ne = max(0.0, min(1.0, decay_ne + noradrenaline_delta))
+    new_ach = max(0.0, min(1.0, decay_ach + acetylcholine_delta))
+    new_gaba = max(0.0, min(1.0, decay_gaba + gaba_delta))
+    new_oxt = max(0.0, min(1.0, decay_oxt + oxytocin_delta))
+    new_glu = max(0.0, min(1.0, decay_glu + glutamate_delta))
+    new_end = max(0.0, min(1.0, decay_end + endorphins_delta))
     
     new_fatigue = max(0.0, min(100.0, current["fatigue"] + fatigue_delta))
     
@@ -534,7 +570,7 @@ def get_ltm_nodes_by_user(user_id: int) -> list[dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified, created_at FROM alex_ltm_nodes WHERE user_id = ?",
+            "SELECT id, user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified, recall_count, created_at FROM alex_ltm_nodes WHERE user_id = ?",
             (user_id,)
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -548,6 +584,11 @@ def update_ltm_node_strength(node_id: int, new_strength: float):
     new_strength = max(0.0, min(1.0, new_strength))
     with get_connection() as conn:
         conn.execute("UPDATE alex_ltm_nodes SET strength = ? WHERE id = ?", (new_strength, node_id))
+        conn.commit()
+
+def increment_ltm_node_recall(node_id: int):
+    with get_connection() as conn:
+        conn.execute("UPDATE alex_ltm_nodes SET recall_count = recall_count + 1 WHERE id = ?", (node_id,))
         conn.commit()
 
 def update_ltm_node_rigidity(node_id: int, new_rigidity: float):
