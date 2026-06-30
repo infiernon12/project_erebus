@@ -203,76 +203,29 @@ def call_openrouter_chat(messages: list, model: str = "openrouter/free", tempera
 
 def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None):
     primary = groq_client_primary
-    fallback = groq_client_fallback
     if type(groq_client).__name__ in ("MagicMock", "Mock"):
         primary = groq_client
-        fallback = groq_client
 
-    # Define the fallback chain
-    model_chain = []
-    if model == "meta-llama/llama-4-scout-17b-16e-instruct":
-        model_chain = [
-            ("meta-llama/llama-4-scout-17b-16e-instruct", primary),
-            ("llama-3.3-70b-versatile", primary),
-            ("llama-3.1-8b-instant", fallback)
-        ]
-    elif model == "llama-3.3-70b-versatile":
-        model_chain = [
-            ("llama-3.3-70b-versatile", primary),
-            ("llama-3.1-8b-instant", fallback)
-        ]
-    else:
-        model_chain = [
-            (model, fallback)
-        ]
-
-    for i, (current_model, client) in enumerate(model_chain):
-        try:
-            kwargs = {"messages": messages, "model": current_model, "temperature": temperature}
-            if max_tokens is not None:
-                kwargs["max_tokens"] = max_tokens
-            return client.chat.completions.create(**kwargs)
-        except Exception as e:
-            if i < len(model_chain) - 1:
-                next_model = model_chain[i+1][0]
-                logger.warning(
-                    f"Groq API call failed for model {current_model}: {e}. "
-                    f"Falling back to {next_model}..."
-                )
-            else:
-                # If we've exhausted all Groq models, check if OpenRouter is available
-                if OPENROUTER_API_KEY:
-                    # Build OpenRouter fallback chain based on the original requested model
-                    or_chain = []
-                    if model == "meta-llama/llama-4-scout-17b-16e-instruct":
-                        or_chain = [
-                            "meta-llama/llama-4-scout-17b-16e-instruct",
-                            "meta-llama/llama-3.3-70b-instruct",
-                            "meta-llama/llama-3.1-8b-instruct"
-                        ]
-                    elif model == "llama-3.3-70b-versatile":
-                        or_chain = [
-                            "meta-llama/llama-3.3-70b-instruct",
-                            "meta-llama/llama-3.1-8b-instruct"
-                        ]
-                    else:
-                        or_chain = [
-                            "meta-llama/llama-3.1-8b-instruct"
-                        ]
-
-                    logger.warning(f"All Groq models failed. Trying OpenRouter fallback chain: {or_chain}...")
-                    for or_model in or_chain:
-                        try:
-                            return call_openrouter_chat(messages, or_model, temperature, max_tokens)
-                        except Exception as ore:
-                            logger.error(f"OpenRouter candidate {or_model} failed: {ore}")
-                    
-                    # If all OpenRouter fallbacks fail
-                    trigger_api_cooldown()
-                    raise e
-                else:
-                    trigger_api_cooldown()
-                    raise e
+    try:
+        kwargs = {"messages": messages, "model": model, "temperature": temperature}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        return primary.chat.completions.create(**kwargs)
+    except Exception as e:
+        logger.warning(
+            f"Groq API call failed for model {model}: {e}. "
+            "Falling back directly to OpenRouter meta-llama/llama-3.3-70b-instruct..."
+        )
+        if OPENROUTER_API_KEY:
+            try:
+                return call_openrouter_chat(messages, "meta-llama/llama-3.3-70b-instruct", temperature, max_tokens)
+            except Exception as ore:
+                logger.error(f"OpenRouter Llama-3.3-70b-instruct failed: {ore}")
+                trigger_api_cooldown()
+                raise ore
+        else:
+            trigger_api_cooldown()
+            raise e
 
 ROM_IDENTITY_CONSTANTS = (
     "Мое имя — Алекс. Я — оцифрованное сознание реального человека.\n"
