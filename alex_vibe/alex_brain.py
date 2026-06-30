@@ -227,7 +227,7 @@ def call_openrouter_chat(messages: list, model: str = "openrouter/free", tempera
     logger.error("All OpenRouter candidate models failed.")
     raise last_err
 
-def call_ollama_chat(messages: list, model: str = "qwen2.5:3b", temperature: float = 0.7, max_tokens: int = None) -> object:
+def call_ollama_chat(messages: list, model: str = "qwen2.5:1.5b", temperature: float = 0.7, max_tokens: int = None) -> object:
     url = "http://localhost:11434/api/chat"
     
     # Ryzen 3 PRO 4450U has 4 physical cores. Using exactly 4 threads is the optimal setting 
@@ -271,7 +271,7 @@ def call_ollama_chat(messages: list, model: str = "qwen2.5:3b", temperature: flo
 def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None, is_main_chat: bool = False):
     # Try local Ollama first
     try:
-        local_model = "qwen2.5:3b" if is_main_chat else "qwen2.5:1.5b"
+        local_model = "qwen2.5:1.5b"
         logger.info(f"Attempting local Ollama completion (model: {local_model}, is_main_chat: {is_main_chat})...")
         return call_ollama_chat(messages, local_model, temperature, max_tokens)
     except Exception as ollama_err:
