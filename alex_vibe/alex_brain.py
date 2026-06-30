@@ -2360,7 +2360,7 @@ def parse_leave_intent_and_update(user_id: int, user_text: str):
                 else:
                     duration = 6.0
                     
-            expected = datetime.now() + timedelta(hours=float(duration))
+            expected = datetime.now(timezone.utc) + timedelta(hours=float(duration))
             expected_str = expected.strftime("%Y-%m-%d %H:%M:%S")
             reason_str = data.get("reason") or "other"
             
