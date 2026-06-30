@@ -253,11 +253,11 @@ def call_ollama_chat(messages: list, model: str = "qwen2.5:3b", temperature: flo
         
         return MockCompletion(content)
 
-def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None):
+def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None, is_main_chat: bool = False):
     # Try local Ollama first
     try:
-        local_model = "qwen2.5:3b"
-        logger.info(f"Attempting local Ollama completion (model: {local_model})...")
+        local_model = "qwen2.5:3b" if is_main_chat else "qwen2.5:1.5b"
+        logger.info(f"Attempting local Ollama completion (model: {local_model}, is_main_chat: {is_main_chat})...")
         return call_ollama_chat(messages, local_model, temperature, max_tokens)
     except Exception as ollama_err:
         logger.warning(f"Local Ollama completion failed: {ollama_err}. Falling back to Groq...")
@@ -2753,6 +2753,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         messages=messages,
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         temperature=0.8,
+        is_main_chat=True
     )
     response = None
     if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
@@ -2804,6 +2805,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
                 messages=messages,
                 model="meta-llama/llama-4-scout-17b-16e-instruct",
                 temperature=0.8,
+                is_main_chat=True
             )
             response = None
             if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
@@ -2836,6 +2838,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             messages=messages,
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.8,
+            is_main_chat=True
         )
         response = None
         if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
