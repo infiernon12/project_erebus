@@ -1401,7 +1401,21 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 2) -> list[str
             text = corrupt_text(text, corruption_severity)
         results.append(text)
         
-    return results
+    # Limit size of results to max 800 characters to prevent context overload
+    final_memories = []
+    total_chars = 0
+    max_char_limit = 800  # Максимум ~200 токенов на LTM-контекст
+
+    for text in results:
+        if total_chars + len(text) > max_char_limit:
+            allowed_len = max_char_limit - total_chars
+            if allowed_len > 50:
+                final_memories.append(text[:allowed_len] + "...")
+            break
+        final_memories.append(text)
+        total_chars += len(text)
+
+    return final_memories
 
 
 def run_reflection(user_id: int) -> tuple[str, bool, str]:
@@ -2748,28 +2762,33 @@ def budget_context(messages: list[dict], max_tokens_limit: int = 3000) -> list[d
     (актуальный запрос или результаты поиска), урезая историю в середине.
     """
     def estimate_tokens(msgs):
+        # 1.7 — безопасный коэффициент для русского языка
         return sum(len(m["content"]) for m in msgs) // 1.7
         
     if estimate_tokens(messages) <= max_tokens_limit:
         return messages
         
-    logger.warning(f"Context budget exceeded ({estimate_tokens(messages)} tokens). Truncating dialogue history...")
+    logger.warning(f"Context budget exceeded ({estimate_tokens(messages)} tokens). Truncating history...")
     
-    if len(messages) <= 2:
-        return messages
-
     msgs = list(messages)
     first_msg = msgs[0]
     last_msg = msgs[-1]
     middle_msgs = msgs[1:-1]
     
-    while estimate_tokens([first_msg, last_msg] + middle_msgs) > max_tokens_limit:
-        if len(middle_msgs) > 0:
-            middle_msgs.pop(0)
-        else:
-            logger.error("System prompt itself is too large! Check retrieve_memories limits.")
-            break
-            
+    # 1. Вычищаем только историю переписки в середине промпта
+    while estimate_tokens([first_msg, last_msg] + middle_msgs) > max_tokens_limit and len(middle_msgs) > 0:
+        middle_msgs.pop(0)
+        
+    # 2. Если история пуста, а лимит все еще превышен — экстренно чистим динамические ассоциации LTM, 
+    # сохраняя ROM-константы ядра личности нетронутыми
+    if estimate_tokens([first_msg, last_msg]) > max_tokens_limit:
+        logger.error("System prompt is critically bloated! Emergency cleaning of dynamic sections.")
+        content = first_msg["content"]
+        # Match both XML-style tags and traditional bracket-style sections
+        content = re.sub(r'(💡 \[АССОЦИАТИВНЫЕ ВОСПОМИНАНИЯ.*?\]|<retrieved_memories>.*?</retrieved_memories>)', '', content, flags=re.DOTALL)
+        content = re.sub(r'(📅 \[ЗАПИСИ ИЗ ДНЕВНИКА.*?\]|<journal_context>.*?</journal_context>)', '', content, flags=re.DOTALL)
+        first_msg["content"] = content
+        
     return [first_msg] + middle_msgs + [last_msg]
 
 def process_and_filter_message(msg_text: str) -> str:
