@@ -1170,7 +1170,7 @@ def reconsolidate_node_text(user_id: int, node_text: str, context: str) -> str:
         logger.error(f"Error during memory reconsolidation: {e}")
         return node_text
 
-def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str]:
+def retrieve_memories(user_id: int, query_text: str, limit: int = 2) -> list[str]:
     """
     Retrieves association memories from LTM.
     Simulates cognitive fatigue and acetylcholine modulation:
@@ -1390,8 +1390,8 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str
     # Sort by strength desc, then by id desc
     other_nodes.sort(key=lambda x: (x.get("strength", 0.0), x.get("id", 0)), reverse=True)
     
-    # Append top 5 strongest remaining memories as background pre-conscious awareness
-    for node in other_nodes[:5]:
+    # Append top 2 strongest remaining memories as background pre-conscious awareness
+    for node in other_nodes[:2]:
         text = node["memory_text"]
         if corruption_severity > 0:
             text = corrupt_text(text, corruption_severity)
@@ -2697,6 +2697,42 @@ def verify_active_hypotheses(user_id: int, user_text: str, retrieved_memories: l
     except Exception as e:
         logger.error(f"Error verifying hypotheses: {e}")
 
+def budget_context(messages: list[dict], max_tokens_limit: int = 1800) -> list[dict]:
+    """
+    Динамически сокращает историю диалога, если суммарный объем промпта 
+    приближается к лимиту контекстного окна.
+    Сохраняет первое сообщение (основной системный промпт) и последнее сообщение 
+    (актуальный запрос или результаты поиска), урезая историю в середине.
+    """
+    def estimate_tokens(msgs):
+        total_chars = sum(len(m["content"]) for m in msgs)
+        return total_chars // 3.5  # 1 токен ~ 3.5 символа
+        
+    if estimate_tokens(messages) <= max_tokens_limit:
+        return messages
+        
+    logger.warning(f"Context budget exceeded ({estimate_tokens(messages)} tokens). Truncating dialogue history...")
+    
+    if len(messages) <= 2:
+        if len(messages) > 0:
+            first_msg = messages[0]
+            first_msg["content"] = first_msg["content"][:1000] + "\n[Контекст частично урезан для экономии памяти]"
+        return messages
+
+    msgs = list(messages)
+    first_msg = msgs[0]
+    last_msg = msgs[-1]
+    middle_msgs = msgs[1:-1]
+    
+    while estimate_tokens([first_msg, last_msg] + middle_msgs) > max_tokens_limit:
+        if len(middle_msgs) > 1:
+            middle_msgs.pop(0)
+        else:
+            first_msg["content"] = first_msg["content"][:1000] + "\n[Контекст частично урезан для экономии памяти]"
+            break
+            
+    return [first_msg] + middle_msgs + [last_msg]
+
 async def handle_alex_chat(message: Message, user: dict, user_text: str, status_msg: Message):
     user_id = message.from_user.id
     
@@ -2976,6 +3012,9 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": user_text})
     
+    # Budget context to prevent token overflow
+    messages = budget_context(messages, max_tokens_limit=1800)
+    
     chat_completion = await asyncio.to_thread(
         safe_groq_chat_completion,
         messages=messages,
@@ -3028,6 +3067,9 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             "role": "system", 
             "content": f"Результаты поиска в сети по запросу '{query}':\n{search_result}\n\nС учетом этих данных сформулируй окончательный ответ пользователю."
         })
+        
+        # Budget context to prevent token overflow after search results injection
+        messages = budget_context(messages, max_tokens_limit=1800)
         
         chat_completion = await asyncio.to_thread(
             safe_groq_chat_completion,
