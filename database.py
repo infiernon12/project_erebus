@@ -787,20 +787,39 @@ def clear_active_memory(user_id: int):
         conn.commit()
 
 def save_alex_emotions(user_id: int, emotions: dict):
-    if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+    # Split saving for testing and production
+    global_id = user_id if TESTING else GLOBAL_ALEX_ID
+    rel_id = user_id
+
     with get_connection() as conn:
+        # 1. Update general cognitive parameters in global profile
         conn.execute(
             """UPDATE alex_emotions 
-               SET dopamine = ?, serotonin = ?, noradrenaline = ?, acetylcholine = ?, gaba = ?, oxytocin = ?, glutamate = ?, endorphins = ?, fatigue = ?, last_interaction = CURRENT_TIMESTAMP 
+               SET dopamine = ?, serotonin = ?, acetylcholine = ?, gaba = ?, glutamate = ?, endorphins = ?, fatigue = ?, last_interaction = CURRENT_TIMESTAMP 
                WHERE user_id = ?""",
             (
-                emotions.get("dopamine", 0.5), emotions.get("serotonin", 0.5), emotions.get("noradrenaline", 0.4),
-                emotions.get("acetylcholine", 0.6), emotions.get("gaba", 0.5), emotions.get("oxytocin", 0.4),
-                emotions.get("glutamate", 0.5), emotions.get("endorphins", 0.3), emotions.get("fatigue", 0.0),
-                user_id
+                emotions.get("dopamine", 0.5),
+                emotions.get("serotonin", 0.5),
+                emotions.get("acetylcholine", 0.6),
+                emotions.get("gaba", 0.5),
+                emotions.get("glutamate", 0.5),
+                emotions.get("endorphins", 0.3),
+                emotions.get("fatigue", 0.0),
+                global_id
             )
         )
+        # 2. Update individual relational parameters in user's profile
+        if not TESTING:
+            conn.execute(
+                """UPDATE alex_emotions 
+                   SET oxytocin = ?, noradrenaline = ?, last_interaction = CURRENT_TIMESTAMP 
+                   WHERE user_id = ?""",
+                (
+                    emotions.get("oxytocin", 0.4),
+                    emotions.get("noradrenaline", 0.4),
+                    rel_id
+                )
+            )
         conn.commit()
 
 def apply_sleep_decay(unverified_vector, rate: float = 0.10):
