@@ -42,7 +42,7 @@ def mock_create(*args, **kwargs):
         mock_message.content = json.dumps({
             "biographical_facts": ["Я живу в Эстонии."],
             "episodic_insights": ["Мне приятно общаться с Русланом."],
-            "semantic_knowledge": ["Руслан — мой близкий друг."]
+            "semantic_knowledge": ["Руслан часто помогает мне."]
         })
     # 2. Memory reconconsolidation (R2)
     elif "Перефразируй или органично впиши факт" in system_msg:

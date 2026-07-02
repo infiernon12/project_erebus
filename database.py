@@ -786,6 +786,54 @@ def clear_active_memory(user_id: int):
         )
         conn.commit()
 
+def save_alex_emotions(user_id: int, emotions: dict):
+    if not TESTING:
+        user_id = GLOBAL_ALEX_ID
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE alex_emotions 
+               SET dopamine = ?, serotonin = ?, noradrenaline = ?, acetylcholine = ?, gaba = ?, oxytocin = ?, glutamate = ?, endorphins = ?, fatigue = ?, last_interaction = CURRENT_TIMESTAMP 
+               WHERE user_id = ?""",
+            (
+                emotions.get("dopamine", 0.5), emotions.get("serotonin", 0.5), emotions.get("noradrenaline", 0.4),
+                emotions.get("acetylcholine", 0.6), emotions.get("gaba", 0.5), emotions.get("oxytocin", 0.4),
+                emotions.get("glutamate", 0.5), emotions.get("endorphins", 0.3), emotions.get("fatigue", 0.0),
+                user_id
+            )
+        )
+        conn.commit()
+
+def apply_sleep_decay(unverified_vector, rate: float = 0.10):
+    import numpy as np
+    from core.vsa_memory import vsa_index
+    v = np.array(unverified_vector, dtype=np.int8)
+    decayed = vsa_index.apply_decay(v, rate)
+    return decayed
+
+def get_last_message_time(user_id: int) -> float:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT created_at FROM messages WHERE user_id = ? ORDER BY message_id DESC LIMIT 1", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            try:
+                # SQLite CURRENT_TIMESTAMP is in UTC and format is 'YYYY-MM-DD HH:MM:SS'
+                dt = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except Exception:
+                pass
+        # Fallback to last_interaction in emotions
+        cursor.execute("SELECT last_interaction FROM alex_emotions WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row and row["last_interaction"]:
+            try:
+                dt = datetime.strptime(row["last_interaction"].split(".")[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except Exception:
+                pass
+        return 0.0
+
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully.")
+

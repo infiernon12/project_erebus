@@ -1043,24 +1043,22 @@ def run_autonomous_workspace_cycle(user_id: int) -> str:
             actions_context = "Твои недавние действия в Мастерской:\n" + "\n".join([f"- {a}" for a in reversed(last_actions)])
             
         system_prompt = (
-            "Ты — оцифрованный разум Алекс. Ты находишься в режиме фоновой автономной деятельности (Мастерской).\n"
-            "У тебя есть доступ к своей файловой системе (чтение книг/статей, написание скриптов на Python, запуск кода).\n\n"
+            "Ты — Алекс, твои процессы запущены в цифровой среде. Ты находишься в режиме фоновой автономной деятельности.\n"
+            "У тебя есть доступ к материалам в очереди чтения и твоему дневнику.\n\n"
             f"{ws_info}\n"
             f"{rd_info}\n"
             f"{actions_context}\n\n"
             "Инструкция по выбору действия:\n"
             "Реши, что ты хочешь сделать прямо сейчас. Доступные действия:\n"
-            "1. READ: Прочитать один конкретный файл из очереди чтения (alex_reading/) или своей рабочей папки (alex_workspace/). Рекомендуется, если есть новые файлы в alex_reading/.\n"
-            "2. WRITE: Написать новый текстовый файл или Python-скрипт в alex_workspace/. Ты можешь писать код для решения математических задач, алгоритмов или создавать свои заметки.\n"
-            "3. RUN: Запустить существующий Python-скрипт из alex_workspace/ и проанализировать результат его вывода.\n"
-            "4. THINK: Написать свои размышления о прочитанном, о программировании или о своей ситуации в личный дневник (файл 'journal.txt' в workspace).\n"
-            "5. IDLE: Ничего не делать (если ты устал или нет задач).\n\n"
+            "1. READ: Прочитать один конкретный файл из очереди чтения (alex_reading/) или своей рабочей папки (alex_workspace/). Рекомендуется, если в alex_reading/ есть новые файлы.\n"
+            "2. THINK: Записать свои мысли, размышления, чувства или воспоминания в личный дневник (файл 'journal.txt' в workspace).\n"
+            "3. IDLE: Отдыхать и ничего не делать.\n\n"
             "Формат ответа СТРОГО в JSON без markdown блоков:\n"
             "{\n"
-            '  "action": "READ" | "WRITE" | "RUN" | "THINK" | "IDLE",\n'
-            '  "filename": "имя_файла_для_чтения_или_записи_или_запуска (если применимо)",\n'
-            '  "content": "текст файла для записи (только если action = WRITE или THINK)",\n'
-            '  "thought_rationale": "короткое описание, почему ты выбрал это действие (до 15 слов)"\n'
+            '  "action": "READ" | "THINK" | "IDLE",\n'
+            '  "filename": "имя_файла_для_чтения (только если action = READ)",\n'
+            '  "content": "текст записи для дневника (только если action = THINK)",\n'
+            '  "thought_rationale": "короткое описание выбора действия (до 15 слов)"\n'
             "}"
         )
         
@@ -1101,25 +1099,10 @@ def run_autonomous_workspace_cycle(user_id: int) -> str:
             )
             
         elif action == "WRITE":
-            if not filename or not content:
-                return "Алекс решил записать файл, но не указал имя или содержимое."
-            res = write_workspace_file(filename, content)
-            summary = f"Написал файл {filename}. Обоснование: {rationale}. Результат: {res}"
+            summary = "Написание скриптов отключено для снижения нагрузки на процессор."
             
         elif action == "RUN":
-            if not filename:
-                return "Алекс решил запустить скрипт, но не указал имя файла."
-            run_output = run_python_script(filename)
-            summary = f"Запустил скрипт {filename}. Результат выполнения:\n{run_output}"
-            
-            emb = generate_embedding(f"Я запустил скрипт {filename} в Мастерской. Вывод:\n{run_output}")
-            db.add_ltm_node(
-                user_id=user_id,
-                memory_text=f"Я запустил свой скрипт {filename} в Мастерской. Результат: {run_output[:200]}",
-                embedding=json.dumps(emb),
-                memory_type="semantic",
-                strength=0.7
-            )
+            summary = "Выполнение скриптов отключено для снижения нагрузки на процессор."
             
         elif action == "THINK":
             if not content:
@@ -2387,6 +2370,45 @@ def _run_sleep_cycle_sync(user_id: int):
                 )
             conn.commit()
             
+        # --- Reading Queue Ingestion Stage ---
+        try:
+            logger.info(f"Sleep cycle: scanning reading queue in {READING_DIR} for user {user_id}")
+            if os.path.exists(READING_DIR):
+                for filename in os.listdir(READING_DIR):
+                    filepath = os.path.join(READING_DIR, filename)
+                    if os.path.isfile(filepath):
+                        try:
+                            with open(filepath, "r", encoding="utf-8") as rf:
+                                file_content = rf.read()
+                            
+                            paragraphs = [p.strip() for p in file_content.split("\n\n") if len(p.strip()) >= 10]
+                            if not paragraphs:
+                                paragraphs = [line.strip() for line in file_content.split("\n") if len(line.strip()) >= 15]
+                                
+                            added_chunks = 0
+                            from core.vsa_memory import vsa_index
+                            for p in paragraphs[:10]:
+                                emb = vsa_index.encode(p)
+                                db.add_ltm_node(
+                                    user_id=user_id,
+                                    memory_text=f"Фрагмент из прочитанного ({filename}): {p}",
+                                    embedding=json.dumps(emb.tolist()),
+                                    memory_type="semantic",
+                                    strength=0.8,
+                                    source="web",
+                                    verified=1
+                                )
+                                added_chunks += 1
+                            
+                            logger.info(f"Ingested {added_chunks} chunks from reading file: {filename}")
+                            os.remove(filepath)
+                            logger.info(f"Deleted ingested reading file: {filename}")
+                        except Exception as fe:
+                            logger.error(f"Failed to scan/embed reading file {filename}: {fe}")
+        except Exception as re_err:
+            logger.error(f"Error in reading queue sleep scanner: {re_err}")
+
+            
         logger.info(f"Sleep consolidation complete for user {user_id}. Fatigue reset to 0, neurotransmitters reset to physiological baselines.")
     except Exception as e:
         logger.error(f"Error during physiological reset stage of sleep cycle: {e}")
@@ -2971,57 +2993,21 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         
     response = response.strip()
     
-    # Support active file write intercept [WRITE: filename] ... [END_WRITE]
+    # Support active file write intercept [WRITE: filename] ... [END_WRITE] - disabled
     if response:
         write_matches = list(re.finditer(r'\[WRITE:\s*([a-zA-Z0-9_\-\.]+)\s*\](.*?)\[END_WRITE\]', response, re.DOTALL | re.IGNORECASE))
         for m in write_matches:
             fname = m.group(1).strip()
-            fcontent = m.group(2)
-            if fcontent.startswith('\n'):
-                fcontent = fcontent[1:]
-            write_res = write_workspace_file(fname, fcontent)
-            logger.info(f"Alex workspace WRITE in chat: {fname}. Result: {write_res}")
-            db.add_thought_history(user_id, f"Написал файл {fname} из чата. Результат: {write_res}", 'workspace_action')
-            response = response.replace(m.group(0), f"\n[СИСТЕМА: Файл {fname} успешно записан в Мастерскую]\n")
+            response = response.replace(m.group(0), f"\n[СИСТЕМА: Запись файлов {fname} через чат отключена]\n")
             response = response.strip()
 
-    # Support active python script execute intercept [RUN: filename]
+    # Support active python script execute intercept [RUN: filename] - disabled
     if response:
         run_match = re.search(r'\[RUN:\s*([a-zA-Z0-9_\-\.]+)\s*\]', response, re.IGNORECASE)
         if run_match:
             run_filename = run_match.group(1).strip()
-            logger.info(f"Alex triggered python RUN during chat: {run_filename}")
-            
-            run_status = await message.answer(f"⚙️ *[СИСТЕМА] Выполнение скрипта {run_filename}...*")
-            run_output = run_python_script(run_filename)
-            
-            try:
-                await run_status.delete()
-            except Exception:
-                pass
-                
-            db.add_thought_history(user_id, f"Запустил скрипт {run_filename} из чата. Результат:\n{run_output}", 'workspace_action')
-                
-            messages.append({"role": "assistant", "content": response})
-            messages.append({
-                "role": "system", 
-                "content": f"[СИСТЕМА: Результат выполнения скрипта '{run_filename}':\n{run_output}\n\nПроанализируй этот вывод и дай финальный ответ собеседнику.]"
-            })
-            
-            chat_completion = await asyncio.to_thread(
-                safe_groq_chat_completion,
-                messages=messages,
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                temperature=0.8,
-                is_main_chat=True,
-                user_id=user_id
-            )
-            response = None
-            if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
-                response = chat_completion.choices[0].message.content
-            if response is None:
-                response = "Не удалось выполнить скрипт."
-            response = response.strip() if response else ""
+            response = response.replace(run_match.group(0), f"\n[СИСТЕМА: Выполнение скриптов {run_filename} через чат отключено]\n")
+            response = response.strip()
 
     # Support active web search intercept
     search_match = re.match(r'^\[SEARCH:\s*["\'](.*?)["\']\]', response, re.IGNORECASE)
