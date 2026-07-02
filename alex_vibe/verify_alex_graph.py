@@ -57,7 +57,12 @@ def mock_create(*args, **kwargs):
         })
     # 4. Merge statements (R4)
     elif "Объедини и консолидируй эти дублирующиеся воспоминания" in system_msg:
-        mock_message.content = "Я живу в Эстонии и люблю обучать Python."
+        print(f"MOCK MERGE: system_msg={system_msg!r}")
+        if "Python" in system_msg or "python" in system_msg:
+            mock_message.content = "Я живу в Эстонии и люблю обучать Python."
+        else:
+            mock_message.content = "Руслан — мой близкий друг."
+        print(f"MOCK MERGE RESULT: {mock_message.content!r}")
     elif "Сейчас твой собеседник молчит" in system_msg:
         if "поисковый запрос в интернет" in system_msg:
             mock_message.content = '[SEARCH: "python programming language"]'
@@ -68,6 +73,7 @@ def mock_create(*args, **kwargs):
     else:
         mock_message.content = "Mock response"
         
+    print(f"MOCK CREATE: sys_msg_prefix={system_msg[:40]!r} -> content={mock_message.content!r}")
     mock_choice.message = mock_message
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]

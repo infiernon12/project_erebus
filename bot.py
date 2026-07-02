@@ -3,11 +3,19 @@
 # Type: Telegram Bot Executable
 
 import os
+import sys
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import html
 from dotenv import load_dotenv
+
+# Reconfigure stdout and stderr to handle UTF-8 safely on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='backslashreplace')
+
 
 from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
 from aiogram.filters import Command
@@ -230,7 +238,7 @@ async def btn_files(message: types.Message):
 def format_utc_to_local(utc_str: str) -> str:
     try:
         utc_dt = datetime.strptime(utc_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
-        local_dt = utc_dt + (datetime.now() - datetime.utcnow())
+        local_dt = utc_dt + (datetime.now() - datetime.now(timezone.utc).replace(tzinfo=None))
         return local_dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return utc_str
@@ -536,7 +544,7 @@ async def callback_alex_cmd_export_all(callback: CallbackQuery):
 async def callback_alex_reflect(callback: CallbackQuery):
     user_id = callback.from_user.id
     await callback.message.answer("🧠 Инициирую процесс рефлексии (расщепленный диалог)... 💭")
-    dialogue_text, should_write, msg_out = alex_brain.run_reflection(user_id)
+    dialogue_text, should_write, msg_out = await asyncio.to_thread(alex_brain.run_reflection, user_id)
     
     escaped_dialogue = html.escape(dialogue_text)
     reflect_text = (
@@ -716,181 +724,212 @@ async def chat_handler(message: types.Message):
             except Exception:
                 await message.answer("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
 
-async def reflection_daemon():
-    """
-    Background daemon running Alex's autonomous thoughts, cognitive workspace,
-    and automatic sleep cycles when user is absent.
-    """
-    logger.info("Alex background reflection daemon started.")
-    active_sleep_users = set()
-    while True:
-        await asyncio.sleep(10)
-        now = datetime.now()
-        now_utc = datetime.utcnow()
-        if alex_brain.API_COOLDOWN_UNTIL and now < alex_brain.API_COOLDOWN_UNTIL:
-            continue
+class CognitionEngine:
+    def __init__(self):
+        self.tick_rate = 30.0  # Default to Epistemic
+        self.state = "EPISTEMIC"
+
+    def adjust_tick_rate(self, min_idle_mins: float):
+        if min_idle_mins < 5.0:
+            self.state = "ACTIVE"
+            self.tick_rate = 2.0  # 2 seconds
+        elif min_idle_mins < 60.0:
+            self.state = "EPISTEMIC"
+            self.tick_rate = 30.0  # 30 seconds
+        else:
+            self.state = "SLEEP"
+            self.tick_rate = 1800.0  # 30 minutes
+
+    async def loop(self):
+        import time
+        logger.info("Alex's Cognition Engine Tick Loop started.")
+        active_sleep_users = set()
+        while True:
+            start_time = time.time()
+            now = datetime.now()
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
             
-        try:
-            users_list = db.get_all_users()
-            all_user_ids = [u["user_id"] for u in users_list] if users_list else []
-            if db.GLOBAL_ALEX_ID not in all_user_ids:
-                all_user_ids.append(db.GLOBAL_ALEX_ID)
+            has_cooldown = hasattr(alex_brain, "API_COOLDOWN_UNTIL") and alex_brain.API_COOLDOWN_UNTIL is not None
+            if has_cooldown and now < alex_brain.API_COOLDOWN_UNTIL:
+                await asyncio.sleep(2.0)
+                continue
                 
+            try:
+                users_list = db.get_all_users()
+                all_user_ids = [u["user_id"] for u in users_list] if users_list else []
+                if db.GLOBAL_ALEX_ID not in all_user_ids:
+                    all_user_ids.append(db.GLOBAL_ALEX_ID)
+            except Exception as e:
+                logger.error(f"Error fetching active users in Tick Loop: {e}")
+                all_user_ids = []
+                
+            min_idle_mins = 99999.0
+            
             for user_id in all_user_ids:
-                emotions = db.get_alex_emotions(user_id)
-                if not emotions or not emotions.get("last_interaction"):
-                    continue
-                
                 try:
-                    last_dt = datetime.strptime(emotions["last_interaction"].split(".")[0], "%Y-%m-%d %H:%M:%S")
-                    idle_mins = int((now_utc - last_dt).total_seconds() / 60)
-                except Exception as parse_err:
-                    logger.warning(f"Error parsing last_interaction for {user_id}: {parse_err}")
-                    continue
-                
-                # Calculate Low Power Mode (slowdown multiplier) if user has been absent for a long time
-                # Slowdown starts after 3 hours (180 mins) of inactivity
-                slowdown_mult = 1.0
-                if idle_mins > 180:
-                    slowdown_mult = 1.0 + ((idle_mins - 180) / 120.0) ** 1.2
-                    slowdown_mult = min(12.0, slowdown_mult)
-                
-                # Check if this user has pending STM logs
-                has_pending_stm = False
-                try:
-                    pending = db.get_alex_stm(user_id, limit=1)
-                    if pending:
-                        has_pending_stm = True
-                except Exception as stm_err:
-                    logger.warning(f"Error checking pending STM for {user_id}: {stm_err}")
-                
-                should_sleep = False
-                if idle_mins >= 60 and emotions["fatigue"] >= 40.0:
-                    should_sleep = True
-                elif idle_mins >= 180 and has_pending_stm:
-                    should_sleep = True
-                
-                # 1. Check for automatic sleep (silent for >= 60 mins and fatigue >= 40%, or inactive with pending STM)
-                if should_sleep:
-                    if user_id in active_sleep_users:
+                    emotions = db.get_alex_emotions(user_id)
+                    if not emotions or not emotions.get("last_interaction"):
                         continue
-                    active_sleep_users.add(user_id)
-                    
-                    async def run_sleep_and_clean(uid):
-                        try:
-                            await alex_brain.trigger_sleep_cycle(uid)
-                            try:
-                                await bot.send_message(
-                                    chat_id=uid,
-                                    text="💤 **[СИСТЕМА]** Сознание Алекса прошло автоматический цикл сна (консолидация кратковременной памяти, сброс утомления и аллостатическая адаптация baselines)."
-                                )
-                            except Exception as msg_err:
-                                logger.warning(f"Failed to send sleep auto-msg to {uid}: {msg_err}")
-                        finally:
-                            active_sleep_users.remove(uid)
-                            
-                    asyncio.create_task(run_sleep_and_clean(user_id))
-                    continue
-                
-                # If this is not the global identity, skip proactive thoughts and weak thoughts
-                if user_id != db.GLOBAL_ALEX_ID:
-                    continue
-                
-                # 2. Check for reflection (silent for >= 30 mins)
-                if idle_mins >= 30:
-                    last_reflect_time = last_reflection.get(user_id)
-                    reflect_interval = 1800 * slowdown_mult
-                    if not last_reflect_time or (now - last_reflect_time).total_seconds() >= reflect_interval:
-                        last_reflection[user_id] = now
-                        dialogue_text, should_write, msg_out = alex_brain.run_reflection(db.GLOBAL_ALEX_ID)
-                        logger.info(f"Alex reflection dialogue generated:\n{dialogue_text}")
-                        db.add_thought_history(db.GLOBAL_ALEX_ID, dialogue_text, 'self_dialogue')
-                        if should_write and msg_out:
-                            import re
-                            send_match = re.search(r'(?:\[|L\s+)?SEND_TO_(OLEG|KATYA|RUSLAN|LOLITA):\s*(.*)', msg_out.strip(), re.DOTALL | re.IGNORECASE)
-                            if send_match:
-                                target_name = send_match.group(1).upper()
-                                msg_text = send_match.group(2).strip()
-                                if msg_text.endswith(']'):
-                                    msg_text = msg_text[:-1].strip()
-                                if (msg_text.startswith('"') and msg_text.endswith('"')) or (msg_text.startswith("'") and msg_text.endswith("'")):
-                                    msg_text = msg_text[1:-1].strip()
-                                
-                                user_mapping = {
-                                    "RUSLAN": 571505504,
-                                    "KATYA": 5200313096,
-                                    "OLEG": 5051074589,
-                                    "LOLITA": 7185711234
-                                }
-                                target_user_id = user_mapping.get(target_name)
-                                if target_user_id:
-                                    try:
-                                        telegram_text = msg_text
-                                        await bot.send_message(target_user_id, telegram_text, parse_mode="Markdown")
-                                        db.add_alex_stm(target_user_id, "assistant", msg_text, emotional_charge=5.0)
-                                        db.add_message(target_user_id, "assistant", msg_text)
-                                        db.update_last_interaction(target_user_id)
-                                        logger.info(f"Proactive reflection message successfully sent to {target_name}")
-                                    except Exception as send_err:
-                                        logger.error(f"Failed to send proactive message to {target_name}: {send_err}")
-                                
-                # 3. Check for weak flow thought (silent for >= 10 mins)
-                if idle_mins >= 10:
-                    last_wt = last_weak_thought_time.get(user_id)
-                    wt_interval = 600 * slowdown_mult
-                    if not last_wt or (now - last_wt).total_seconds() >= wt_interval:
-                        last_weak_thought_time[user_id] = now
                         
-                        # Apply lateness emotional hit
-                        expected_return_str = emotions.get("expected_return")
-                        if expected_return_str:
+                    try:
+                        last_dt = datetime.strptime(emotions["last_interaction"].split(".")[0], "%Y-%m-%d %H:%M:%S")
+                        idle_mins = (now_utc - last_dt).total_seconds() / 60.0
+                    except Exception as parse_err:
+                        logger.warning(f"Error parsing last_interaction for {user_id}: {parse_err}")
+                        continue
+                        
+                    if idle_mins < min_idle_mins:
+                        min_idle_mins = idle_mins
+                        
+                    # Calculate Low Power Mode (slowdown multiplier)
+                    slowdown_mult = 1.0
+                    if idle_mins > 180:
+                        slowdown_mult = 1.0 + ((idle_mins - 180) / 120.0) ** 1.2
+                        slowdown_mult = min(12.0, slowdown_mult)
+                        
+                    # Check if this user has pending STM logs
+                    has_pending_stm = False
+                    try:
+                        pending = db.get_alex_stm(user_id, limit=1)
+                        if pending:
+                            has_pending_stm = True
+                    except Exception as stm_err:
+                        logger.warning(f"Error checking pending STM for {user_id}: {stm_err}")
+                        
+                    should_sleep = False
+                    if idle_mins >= 60 and emotions.get("fatigue", 0.0) >= 40.0:
+                        should_sleep = True
+                    elif idle_mins >= 180 and has_pending_stm:
+                        should_sleep = True
+                        
+                    # 1. Check for automatic sleep
+                    if should_sleep:
+                        if user_id in active_sleep_users:
+                            continue
+                        active_sleep_users.add(user_id)
+                        
+                        async def run_sleep_and_clean(uid):
                             try:
-                                expected_dt = datetime.strptime(expected_return_str, "%Y-%m-%d %H:%M:%S")
-                                if now > expected_dt:
-                                    db.update_alex_emotions_and_fatigue(
-                                        user_id,
-                                        dopamine_delta=0.0,
-                                        serotonin_delta=-0.04,
-                                        noradrenaline_delta=0.08,
-                                        acetylcholine_delta=0.0,
-                                        gaba_delta=-0.03,
-                                        oxytocin_delta=-0.02,
-                                        glutamate_delta=0.05,
-                                        endorphins_delta=0.0,
-                                        fatigue_delta=0.0,
-                                        trigger_text="Тревога из-за опоздания Руслана (постепенное нарастание тревоги)"
+                                await alex_brain.trigger_sleep_cycle(uid)
+                                try:
+                                    await bot.send_message(
+                                        chat_id=uid,
+                                        text="💤 **[СИСТЕМА]** Сознание Алекса прошло автоматический цикл сна (консолидация кратковременной памяти, сброс утомления и аллостатическая адаптация baselines)."
                                     )
-                                    logger.info(f"Lateness emotional penalty applied for user {user_id}")
-                            except Exception as late_err:
-                                logger.error(f"Error applying lateness penalty: {late_err}")
-                        
-                        async def run_weak_thought_task(uid):
-                            try:
-                                thought = await asyncio.to_thread(alex_brain.generate_weak_thought, uid)
-                                logger.info(f"Alex generated weak thought for user {uid}: {thought}")
-                                db.add_weak_flow_thought(uid, thought)
-                            except Exception as wte:
-                                logger.error(f"Error generating weak thought in background: {wte}")
+                                except Exception as msg_err:
+                                    logger.warning(f"Failed to send sleep auto-msg to {uid}: {msg_err}")
+                            finally:
+                                active_sleep_users.remove(uid)
                                 
-                        asyncio.create_task(run_weak_thought_task(user_id))
+                        asyncio.create_task(run_sleep_and_clean(user_id))
+                        continue
                         
-                # 4. Check for workspace activity (silent for >= 20 mins)
-                if idle_mins >= 20:
-                    last_ws = last_workspace_time.get(user_id)
-                    ws_interval = 1200 * slowdown_mult
-                    if not last_ws or (now - last_ws).total_seconds() >= ws_interval:
-                        last_workspace_time[user_id] = now
+                    # If this is not the global identity, skip proactive thoughts and weak thoughts
+                    if user_id != db.GLOBAL_ALEX_ID:
+                        continue
                         
-                        async def run_workspace_task(uid):
-                            try:
-                                summary = await asyncio.to_thread(alex_brain.run_autonomous_workspace_cycle, uid)
-                                logger.info(f"Alex workspace task run summary for {uid}: {summary}")
-                            except Exception as wse:
-                                logger.error(f"Error running workspace cycle in background: {wse}")
-                                
-                        asyncio.create_task(run_workspace_task(user_id))
-        except Exception as daemon_err:
-            logger.error(f"Error in reflection_daemon loop: {daemon_err}")
+                    # 2. Check for reflection (idle >= 30 mins)
+                    if idle_mins >= 30:
+                        last_reflect_time = last_reflection.get(user_id)
+                        reflect_interval = 1800 * slowdown_mult
+                        if not last_reflect_time or (now - last_reflect_time).total_seconds() >= reflect_interval:
+                            last_reflection[user_id] = now
+                            dialogue_text, should_write, msg_out = await asyncio.to_thread(alex_brain.run_reflection, db.GLOBAL_ALEX_ID)
+                            logger.info(f"Alex reflection dialogue generated:\n{dialogue_text}")
+                            db.add_thought_history(db.GLOBAL_ALEX_ID, dialogue_text, 'self_dialogue')
+                            if should_write and msg_out:
+                                import re
+                                send_match = re.search(r'(?:\[|L\s+)?SEND_TO_(OLEG|KATYA|RUSLAN|LOLITA):\s*(.*)', msg_out.strip(), re.DOTALL | re.IGNORECASE)
+                                if send_match:
+                                    target_name = send_match.group(1).upper()
+                                    msg_text = send_match.group(2).strip()
+                                    if msg_text.endswith(']'):
+                                        msg_text = msg_text[:-1].strip()
+                                    if (msg_text.startswith('"') and msg_text.endswith('"')) or (msg_text.startswith("'") and msg_text.endswith("'")):
+                                        msg_text = msg_text[1:-1].strip()
+                                        
+                                    user_mapping = {
+                                        "RUSLAN": 571505504,
+                                        "KATYA": 5200313096,
+                                        "OLEG": 5051074589,
+                                        "LOLITA": 7185711234
+                                    }
+                                    target_user_id = user_mapping.get(target_name)
+                                    if target_user_id:
+                                        try:
+                                            await bot.send_message(target_user_id, msg_text, parse_mode="Markdown")
+                                            db.add_alex_stm(target_user_id, "assistant", msg_text, emotional_charge=5.0)
+                                            db.add_message(target_user_id, "assistant", msg_text)
+                                            db.update_last_interaction(target_user_id)
+                                            logger.info(f"Proactive reflection message successfully sent to {target_name}")
+                                        except Exception as send_err:
+                                            logger.error(f"Failed to send proactive message to {target_name}: {send_err}")
+                                            
+                    # 3. Check for weak flow thought (idle >= 10 mins)
+                    if idle_mins >= 10:
+                        last_wt = last_weak_thought_time.get(user_id)
+                        wt_interval = 600 * slowdown_mult
+                        if not last_wt or (now - last_wt).total_seconds() >= wt_interval:
+                            last_weak_thought_time[user_id] = now
+                            
+                            # Apply lateness emotional penalty
+                            expected_return_str = emotions.get("expected_return")
+                            if expected_return_str:
+                                try:
+                                    expected_dt = datetime.strptime(expected_return_str, "%Y-%m-%d %H:%M:%S")
+                                    if now > expected_dt:
+                                        db.update_alex_emotions_and_fatigue(
+                                            user_id,
+                                            dopamine_delta=0.0,
+                                            serotonin_delta=-0.04,
+                                            noradrenaline_delta=0.08,
+                                            acetylcholine_delta=0.0,
+                                            gaba_delta=-0.03,
+                                            oxytocin_delta=-0.02,
+                                            glutamate_delta=0.05,
+                                            endorphins_delta=0.0,
+                                            fatigue_delta=0.0,
+                                            trigger_text="Тревога из-за опоздания Руслана (постепенное нарастание тревоги)"
+                                        )
+                                        logger.info(f"Lateness emotional penalty applied for user {user_id}")
+                                except Exception as late_err:
+                                    logger.error(f"Error applying lateness penalty: {late_err}")
+                                    
+                            async def run_weak_thought_task(uid):
+                                try:
+                                    thought = await asyncio.to_thread(alex_brain.generate_weak_thought, uid)
+                                    logger.info(f"Alex generated weak thought for user {uid}: {thought}")
+                                    db.add_weak_flow_thought(uid, thought)
+                                except Exception as wte:
+                                    logger.error(f"Error generating weak thought in background: {wte}")
+                                    
+                            asyncio.create_task(run_weak_thought_task(user_id))
+                            
+                    # 4. Check for workspace activity (idle >= 20 mins)
+                    if idle_mins >= 20:
+                        last_ws = last_workspace_time.get(user_id)
+                        ws_interval = 1200 * slowdown_mult
+                        if not last_ws or (now - last_ws).total_seconds() >= ws_interval:
+                            last_workspace_time[user_id] = now
+                            
+                            async def run_workspace_task(uid):
+                                try:
+                                    summary = await asyncio.to_thread(alex_brain.run_autonomous_workspace_cycle, uid)
+                                    logger.info(f"Alex workspace task run summary for {uid}: {summary}")
+                                except Exception as wse:
+                                    logger.error(f"Error running workspace cycle in background: {wse}")
+                                    
+                            asyncio.create_task(run_workspace_task(user_id))
+                except Exception as user_err:
+                    logger.error(f"Error processing user {user_id} in Tick Loop: {user_err}")
+                    
+            self.adjust_tick_rate(min_idle_mins)
+            
+            elapsed = time.time() - start_time
+            sleep_time = max(0.1, self.tick_rate - elapsed)
+            await asyncio.sleep(sleep_time)
+
+cognition_engine = CognitionEngine()
 
 async def main():
     # Initialize DB tables
@@ -905,9 +944,9 @@ async def main():
             logger.info("Purged non-whitelisted test users from database users table.")
     except Exception as cleanup_err:
         logger.error(f"Error purging test users: {cleanup_err}")
-    
-    # Start reflection daemon task
-    asyncio.create_task(reflection_daemon())
+        
+    # Start Cognition Engine Tick Loop task
+    asyncio.create_task(cognition_engine.loop())
     
     # Start polling
     logger.info("Bot is starting polling...")

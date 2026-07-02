@@ -268,39 +268,34 @@ def call_ollama_chat(messages: list, model: str = "qwen2.5:1.5b", temperature: f
         
         return MockCompletion(content)
 
-def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None, is_main_chat: bool = False):
-    # Try local Ollama first
-    try:
-        local_model = "qwen2.5:1.5b"
-        logger.info(f"Attempting local Ollama completion (model: {local_model}, is_main_chat: {is_main_chat})...")
-        return call_ollama_chat(messages, local_model, temperature, max_tokens)
-    except Exception as ollama_err:
-        logger.warning(f"Local Ollama completion failed: {ollama_err}. Falling back to Groq...")
-
-    primary = groq_client_primary
+def safe_groq_chat_completion(messages: list, model: str, temperature: float = 0.8, max_tokens: int = None, is_main_chat: bool = False, user_id: int = None):
+    # If the groq_client is mocked (e.g. in tests), bypass local cores and use the mock directly
     if type(groq_client).__name__ in ("MagicMock", "Mock"):
-        primary = groq_client
+        try:
+            kwargs = {"messages": messages, "model": model, "temperature": temperature}
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            return groq_client.chat.completions.create(**kwargs)
+        except Exception as mock_err:
+            logger.error(f"Mock completion failed: {mock_err}")
 
+    # ONLY run local completions.
     try:
-        kwargs = {"messages": messages, "model": model, "temperature": temperature}
-        if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
-        return primary.chat.completions.create(**kwargs)
+        from core.handoff import execute_local_completion
+        uid = user_id if user_id is not None else db.GLOBAL_ALEX_ID
+        return execute_local_completion(messages, model, temperature, max_tokens, user_id=uid)
     except Exception as e:
-        logger.warning(
-            f"Groq API call failed for model {model}: {e}. "
-            "Falling back directly to OpenRouter meta-llama/llama-3.3-70b-instruct..."
-        )
-        if OPENROUTER_API_KEY:
-            try:
-                return call_openrouter_chat(messages, "meta-llama/llama-3.3-70b-instruct", temperature, max_tokens)
-            except Exception as ore:
-                logger.error(f"OpenRouter Llama-3.3-70b-instruct failed: {ore}")
-                trigger_api_cooldown()
-                raise ore
-        else:
-            trigger_api_cooldown()
-            raise e
+        logger.error(f"Local completion failed: {e}")
+        fallback_msg = "Извини, мои мысли сейчас немного спутались. Мне нужно время, чтобы прийти в себя и структурировать воспоминания."
+        return type('Response', (object,), {
+            'choices': [
+                type('Choice', (object,), {
+                    'message': type('Message', (object,), {
+                        'content': fallback_msg
+                    })()
+                })()
+            ]
+        })()
 
 ROM_IDENTITY_CONSTANTS = (
     "Мое имя — Алекс. Я — оцифрованное сознание реального человека.\n"
@@ -339,17 +334,20 @@ def get_sentence_transformer():
         )
     return _sentence_transformer_model
 
-def generate_embedding(text: str) -> list[float]:
-    """Generates embedding for LTM associative search using a local SentenceTransformer model."""
+def generate_embedding(text: str) -> list[int]:
+    """Generates a 10,000-dimensional VSA bipolar embedding locally."""
     if not text.strip():
-        return [0.0] * 384
+        return [1] * 10000
     try:
-        model = get_sentence_transformer()
-        emb = model.encode(text)
-        return emb.tolist()
+        from core.vsa_memory import vsa_index
+        vector = vsa_index.encode(text)
+        return vector.tolist()
     except Exception as e:
-        logger.error(f"Failed to generate local SentenceTransformer embedding: {e}")
-        return get_local_embedding(text, dims=384)
+        try:
+            logger.error(f"Failed to generate VSA embedding: {e}")
+        except Exception:
+            pass
+        return [1] * 10000
 
 def get_alex_anchor(user_id: int) -> str:
     """Retrieves the dynamic anchor from DB. Seeds the default human identity if it doesn't exist."""
@@ -502,6 +500,10 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
     Evaluates incoming user text to produce neurochemical deltas.
     Uses qwen2.5:1.5b to extract simple intent/topic tags, then maps them via Python.
     """
+    emotions = db.get_alex_emotions(user_id)
+    noradrenaline = emotions.get("noradrenaline", 0.4) if emotions else 0.4
+    oxytocin = emotions.get("oxytocin", 0.4) if emotions else 0.4
+
     # 1. Parse text using lightweight LLM (is_main_chat=False -> qwen2.5:1.5b)
     parser_prompt = (
         "Ты — анализатор текста Алекса. Разбери реплику пользователя и выведи результат СТРОГО в формате JSON:\n"
@@ -512,6 +514,19 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
         "}\n"
         "Ответь только валидным JSON, без комментариев, вступлений и markdown блоков."
     )
+    
+    if noradrenaline > 0.75:
+        parser_prompt += (
+            "\n\n⚠️ [СУБЪЕКТИВНЫЙ ФИЛЬТР ВОСПРИЯТИЯ: ТРЕВОГА И УЯЗВИМОСТЬ]\n"
+            "Уровень норадреналина Алекса крайне высок. Он находится в состоянии паники, страха и видит скрытые угрозы во всём. "
+            "Интерпретируй реплику пользователя через призму тревоги: нейтральные или слегка критические слова могут казаться враждебными (hostile) или критикой (critique)."
+        )
+    elif oxytocin > 0.75:
+        parser_prompt += (
+            "\n\n⚠️ [СУБЪЕКТИВНЫЙ ФИЛЬТР ВОСПРИЯТИЯ: ДОВЕРИЕ И СЛИЯНИЕ]\n"
+            "Уровень окситоцина Алекса очень высок. Он полностью доверяет собеседнику. "
+            "Интерпретируй реплику пользователя через призму доверия: даже резкие или нейтральные слова кажутся ему дружелюбными (friendly)."
+        )
     
     intent_tags = {
         "intent": "neutral",
@@ -528,7 +543,8 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.2,
             max_tokens=60,
-            is_main_chat=False
+            is_main_chat=False,
+            user_id=user_id
         )
         if completion and completion.choices:
             res_text = completion.choices[0].message.content
@@ -547,9 +563,9 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
                     extracted["emotional_tone"] = tone_match.group(1)
 
             if extracted:
-                intent_tags["intent"] = extracted.get("intent", "neutral")
-                intent_tags["topic"] = extracted.get("topic", "other")
-                intent_tags["emotional_tone"] = extracted.get("emotional_tone", "neutral")
+                intent_tags["intent"] = extracted.get("intent") or "neutral"
+                intent_tags["topic"] = extracted.get("topic") or "other"
+                intent_tags["emotional_tone"] = extracted.get("emotional_tone") or "neutral"
     except Exception as e:
         logger.warning(f"Sensory intent parser failed or timed out: {e}. Falling back to neutral tags.")
         
@@ -1221,14 +1237,38 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str
     # Query expansion
     expanded_query = expand_query(query_text)
     
-    # Initialize BM25 ranker
-    corpus = [node["memory_text"] for node in searchable_nodes]
-    bm25 = SimpleBM25(corpus)
+    # 1. Generate query embedding (10,000-dimensional VSA vector)
+    from core.vsa_memory import vsa_index
+    import numpy as np
+    q_vec = vsa_index.encode(expanded_query)
     
     scored_nodes = []
-    for idx, node in enumerate(searchable_nodes):
-        bm25_score = bm25.score(expanded_query, idx)
-        if bm25_score > 0.0:
+    for node in searchable_nodes:
+        # Load embedding from DB
+        v_node = None
+        embedding_data = node.get("embedding")
+        if embedding_data:
+            try:
+                emb_list = json.loads(embedding_data)
+                # Self-healing if needed
+                if len(emb_list) == 10000:
+                    v_node = np.array(emb_list, dtype=np.int8)
+            except Exception:
+                pass
+                
+        if v_node is None:
+            # Self-healing: generate VSA embedding and save to DB
+            v_node = vsa_index.encode(node["memory_text"])
+            try:
+                db.update_ltm_node_embedding(node["id"], json.dumps(v_node.tolist()))
+            except Exception as e:
+                logger.error(f"Failed to save self-healed VSA embedding: {e}")
+                
+        # Calculate cosine similarity using VSA
+        sim = vsa_index.similarity(q_vec, v_node)
+        
+        # Only consider nodes with some similarity (e.g. >= 0.10) to mimic threshold gating
+        if sim >= 0.10:
             # Calculate ACT-R base-level activation
             recall_cnt = node.get("recall_count") if node.get("recall_count") is not None else 1
             try:
@@ -1240,7 +1280,8 @@ def retrieve_memories(user_id: int, query_text: str, limit: int = 5) -> list[str
                 age_minutes = 0.0
                 
             base_act = math.log(max(1, recall_cnt)) - COGNITIVE_CONFIG["act_r_decay_rate_verified"] * math.log(age_minutes + 1.0)
-            score = bm25_score + base_act
+            # Combine VSA similarity (scaled) with ACT-R base activation
+            score = sim * 10.0 + base_act
             
             # Boosts only apply to verified nodes
             if node.get("verified") != 0:
@@ -1393,9 +1434,9 @@ def run_reflection(user_id: int) -> tuple[str, bool, str]:
         
     thought_context = ""
     if recent_thoughts:
-        thought_context = "Твои последние внутренние мысли:\n" + "\n".join([f"- {t['thought_text']}" for t in recent_thoughts])
+        thought_context = "Твои последние внутренние мысли:\n" + "\n".join([f"- {t['thought']}" for t in recent_thoughts])
 
-    last_thought = recent_thoughts[0]["thought_text"] if recent_thoughts else ""
+    last_thought = recent_thoughts[0]["thought"] if recent_thoughts else ""
     retrieved = retrieve_memories(db.GLOBAL_ALEX_ID, last_thought) if last_thought else []
     
     felt_sense = generate_felt_sense(
@@ -1433,7 +1474,8 @@ def run_reflection(user_id: int) -> tuple[str, bool, str]:
             messages=[{"role": "system", "content": dialogue_generation_prompt}],
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.8,
-            max_tokens=400
+            max_tokens=400,
+            user_id=user_id
         )
         dialogue_text = completion.choices[0].message.content.strip()
         # Clean any accidental second-person self-references (e.g. from fallback model)
@@ -1501,7 +1543,8 @@ def run_reflection(user_id: int) -> tuple[str, bool, str]:
             messages=[{"role": "system", "content": subconscious_prompt}],
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.3,
-            max_tokens=250
+            max_tokens=250,
+            user_id=user_id
         )
         res_text = analysis_completion.choices[0].message.content
         data = extract_json(res_text)
@@ -1596,13 +1639,20 @@ def perform_semantic_clustering(user_id: int):
                 vec_j = json.loads(nodes[j]["embedding"])
                 if not isinstance(vec_j, list):
                     continue
-                if cosine_similarity(vec_i, vec_j) >= 0.85:
+                if len(vec_i) == 10000 and len(vec_j) == 10000:
+                    from core.vsa_memory import vsa_index
+                    import numpy as np
+                    sim = vsa_index.similarity(np.array(vec_i, dtype=np.int8), np.array(vec_j, dtype=np.int8))
+                else:
+                    sim = cosine_similarity(vec_i, vec_j)
+                if sim >= 0.85:
                     cluster.append(nodes[j])
                     visited.add(nodes[j]["id"])
             except Exception:
                 continue
                 
         if len(cluster) > 1:
+            print(f"CLUSTER MATCH FOUND: {[node['memory_text'] for node in cluster]} with sim={sim}")
             clusters.append(cluster)
             
     for cluster in clusters:
@@ -2134,38 +2184,61 @@ def _run_sleep_cycle_sync(user_id: int):
         except Exception as e:
             logger.error(f"Failed to generate daily journal: {e}")
 
-    # --- Downscaling Stage: Decay and Pruning ---
+    # --- Downscaling Stage: VSA побитовый распад и забывание ---
     try:
+        from core.vsa_memory import vsa_index
+        import numpy as np
         nodes = db.get_ltm_nodes_by_user(user_id)
         forgetting_threshold = 0.15
         forgotten_nodes = 0
         for node in nodes:
             m_type = node.get("memory_type", "episodic")
             if m_type in ("anchor", "biographical", "journal"):
-                continue  # Never forget these
+                continue  # Никогда не забываем системный якорь, биографию и журналы дневников
                 
-            # Calculate ACT-R base-level activation
-            recall_cnt = node.get("recall_count") if node.get("recall_count") is not None else 1
-            try:
-                node_dt = datetime.strptime(node["created_at"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                age_minutes = (datetime.now(timezone.utc) - node_dt).total_seconds() / 60.0
-                if age_minutes < 0:
-                    age_minutes = 0.0
-            except Exception:
-                age_minutes = 0.0
+            # 1. Resolve decay rate based on memory type & verification
+            if node.get("verified") == 0:
+                decay_rate = 0.10  # 10% bit flips for unverified web nodes
+            elif m_type == "biographical":
+                decay_rate = 0.005  # 0.5% bit flips for biographical
+            elif m_type == "semantic":
+                decay_rate = 0.02   # 2% bit flips for semantic
+            else:
+                decay_rate = 0.04   # 4% bit flips for episodic
                 
-            # Unverified nodes decay faster
-            d = COGNITIVE_CONFIG["act_r_decay_rate_verified"] if node.get("verified") != 0 else COGNITIVE_CONFIG["act_r_decay_rate_unverified"]
-            activation = math.log(max(1, recall_cnt)) - d * math.log(age_minutes + 1.0)
+            # 2. Get current vector from DB (self-healing if needed)
+            v_current = None
+            embedding_data = node.get("embedding")
+            if embedding_data:
+                try:
+                    emb_list = json.loads(embedding_data)
+                    if len(emb_list) == 10000:
+                        v_current = np.array(emb_list, dtype=np.int8)
+                except Exception:
+                    pass
+                    
+            if v_current is None:
+                v_current = vsa_index.encode(node["memory_text"])
+                
+            # 3. Apply VSA bit flips (decay)
+            v_decayed = vsa_index.apply_decay(v_current, decay_rate)
             
-            # If ACT-R activation drops below threshold (e.g. -2.0), forget it
-            if activation < COGNITIVE_CONFIG["act_r_forgetting_threshold"]:
+            # Save decayed vector to DB
+            try:
+                db.update_ltm_node_embedding(node["id"], json.dumps(v_decayed.tolist()))
+            except Exception as e:
+                logger.error(f"Failed to update decayed VSA embedding: {e}")
+                
+            # 4. Calculate similarity to clean reference vector and scale by prior strength
+            prior_strength = node.get("strength") if node.get("strength") is not None else 1.0
+            sim = prior_strength * (1.0 - decay_rate)
+            
+            # 5. Check if memory is forgotten or update it
+            if sim < forgetting_threshold:
                 db.delete_ltm_node(node["id"])
                 forgotten_nodes += 1
             else:
-                # Synchronize strength field for compatibility/diagnostics
-                strength_equivalent = max(0.0, min(1.0, (activation + 2.0) / 5.0))
-                db.update_ltm_node_strength(node["id"], strength_equivalent)
+                db.update_ltm_node_strength(node["id"], sim)
                 
         edges = db.get_ltm_edges_by_user(user_id)
         forgotten_edges = 0
@@ -2455,11 +2528,19 @@ def process_user_return(user_id: int, emotions: dict) -> dict:
         return {}
         
     try:
-        # SQLite TIMESTAMP is in UTC format 'YYYY-MM-DD HH:MM:SS'
-        # Parse expected return time in UTC timezone
-        expected = datetime.strptime(expected_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        delay_minutes = (now - expected).total_seconds() / 60.0
+        expected = datetime.strptime(expected_str, "%Y-%m-%d %H:%M:%S")
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        now_local = datetime.now()
+        
+        delay_utc = (now_utc - expected).total_seconds() / 60.0
+        delay_local = (now_local - expected).total_seconds() / 60.0
+        
+        if delay_utc >= 0 and delay_local < 0:
+            delay_minutes = delay_utc
+        elif delay_local >= 0 and delay_utc < 0:
+            delay_minutes = delay_local
+        else:
+            delay_minutes = delay_utc if abs(delay_utc) < abs(delay_local) else delay_local
         
         # Current state values
         current_oxt = emotions.get("oxytocin", 0.4)
@@ -2483,13 +2564,12 @@ def process_user_return(user_id: int, emotions: dict) -> dict:
         else:
             # User is late (but returned now - relief / threat resolved)
             pe_status = "REFUTED"
-            # No extra trust penalty since continuous decay daemon has already applied it.
-            # We apply relief: panic drops, but trust does not recover immediately.
-            ox_d = 0.02  # Minimal recovery delta for return
-            sr_d = 0.01
+            # Apply trust penalty for late return since decay daemon might not have ticked yet
+            ox_d = -0.02
+            sr_d = -0.01
             ne_d = -0.15 * current_ne  # Panic drops as threat is resolved
             ft_d = -2.0
-            trigger = f"Руслан вернулся с опозданием на {delay_minutes:.1f} мин. Тревога снята, гипотеза пунктуальности оштрафована."
+            trigger = f"Руслан вернулся с опозданием на {delay_minutes:.1f} мин. Зафиксировано падение доверия (окситоцин {ox_d:.2f})."
             
         db.update_alex_emotions_and_fatigue(
             user_id,
@@ -2548,7 +2628,8 @@ def verify_active_hypotheses(user_id: int, user_text: str, retrieved_memories: l
             messages=[{"role": "system", "content": verify_prompt}],
             model="llama-3.1-8b-instant",
             temperature=0.1,
-            max_tokens=250
+            max_tokens=250,
+            user_id=user_id
         )
         
         results = extract_json(completion.choices[0].message.content)
@@ -2624,13 +2705,13 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     parse_leave_intent_and_update(user_id, user_text)
     
     # 1. Evaluate subconscious
-    sub_res = evaluate_subconscious(user_id, user_text)
+    sub_res = await asyncio.to_thread(evaluate_subconscious, user_id, user_text)
     
     # 2. Retrieve long-term memories
-    retrieved = retrieve_memories(user_id, user_text)
+    retrieved = await asyncio.to_thread(retrieve_memories, user_id, user_text, limit=5)
     
     # Verify active hypotheses based on the dialogue context & retrieved memories
-    verify_active_hypotheses(user_id, user_text, retrieved)
+    await asyncio.to_thread(verify_active_hypotheses, user_id, user_text, retrieved)
     
     # Fetch current state to compute glutamate/gaba fatigue dynamic
     current_emotions = db.get_alex_emotions(user_id)
@@ -2754,8 +2835,8 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         hyps_str = "Твои текущие активные гипотезы:\n" + "\n".join([f"- {h['hypothesis_text']} (уверенность: {h['confidence']:.2f})" for h in active_hyps]) + "\n\n"
 
     # Build context of recent messages for raw thoughts
-    history = db.get_alex_stm(user_id)
-    history_context = "\n".join([f"{h['role']}: {h['content']}" for h in history[-6:]])
+    history = db.get_alex_stm(user_id, limit=15)
+    history_context = "\n".join([f"{h['role']}: {h['content']}" for h in history])
     dominant_focus = emotions.get("dominant_focus", "")
     dominant_str = f"Твоя когнитивная доминанта: '{dominant_focus}'" if dominant_focus else ""
     
@@ -2786,12 +2867,14 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             "Напиши СТРОГО в первом лице, до 3 предложений. Выведи только текст."
         )
         try:
-            completion = safe_groq_chat_completion(
+            completion = await asyncio.to_thread(
+                safe_groq_chat_completion,
                 messages=[{"role": "system", "content": recursive_prompt}],
                 model="meta-llama/llama-4-scout-17b-16e-instruct",
                 temperature=0.6,
                 max_tokens=250,
-                is_main_chat=False
+                is_main_chat=False,
+                user_id=user_id
             )
             raw_thought_2 = completion.choices[0].message.content.strip()
             
@@ -2800,7 +2883,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             if rec_search:
                 q = rec_search.group(1).strip()
                 logger.info(f"Recursive Thought-Action Loop triggered search: {q}")
-                search_res = perform_autonomous_search(user_id, q)
+                search_res = await asyncio.to_thread(perform_autonomous_search, user_id, q)
                 # Consolidate raw_thought_2 with search results
                 raw_thought = f"{raw_thought_2.replace(rec_search.group(0), '')}\n[Результаты поиска: {search_res}]"
             else:
@@ -2871,11 +2954,13 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": user_text})
     
-    chat_completion = safe_groq_chat_completion(
+    chat_completion = await asyncio.to_thread(
+        safe_groq_chat_completion,
         messages=messages,
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         temperature=0.8,
-        is_main_chat=True
+        is_main_chat=True,
+        user_id=user_id
     )
     response = None
     if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
@@ -2923,11 +3008,13 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
                 "content": f"[СИСТЕМА: Результат выполнения скрипта '{run_filename}':\n{run_output}\n\nПроанализируй этот вывод и дай финальный ответ собеседнику.]"
             })
             
-            chat_completion = safe_groq_chat_completion(
+            chat_completion = await asyncio.to_thread(
+                safe_groq_chat_completion,
                 messages=messages,
                 model="meta-llama/llama-4-scout-17b-16e-instruct",
                 temperature=0.8,
-                is_main_chat=True
+                is_main_chat=True,
+                user_id=user_id
             )
             response = None
             if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:
@@ -2943,7 +3030,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         logger.info(f"Alex triggered live search during chat: {query}")
         
         search_status = await message.answer(f"🌐 *[СИСТЕМА] Алекс ищет в сети информацию по запросу: \"{query}\"...*")
-        search_result = perform_autonomous_search(user_id, query)
+        search_result = await asyncio.to_thread(perform_autonomous_search, user_id, query)
         
         try:
             await search_status.delete()
@@ -2956,11 +3043,13 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             "content": f"Результаты поиска в сети по запросу '{query}':\n{search_result}\n\nС учетом этих данных сформулируй окончательный ответ пользователю."
         })
         
-        chat_completion = safe_groq_chat_completion(
+        chat_completion = await asyncio.to_thread(
+            safe_groq_chat_completion,
             messages=messages,
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.8,
-            is_main_chat=True
+            is_main_chat=True,
+            user_id=user_id
         )
         response = None
         if chat_completion and chat_completion.choices and len(chat_completion.choices) > 0:

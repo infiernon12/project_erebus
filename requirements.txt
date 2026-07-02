@@ -2,3 +2,7 @@ aiogram>=3.0.0
 groq
 python-dotenv
 ddgs>=9.14.4
+llama-cpp-python
+rwkv
+numpy
+sentence-transformers

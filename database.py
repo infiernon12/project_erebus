@@ -604,6 +604,11 @@ def update_ltm_node_text(node_id: int, new_text: str):
         conn.execute("UPDATE alex_ltm_nodes SET memory_text = ? WHERE id = ?", (new_text, node_id))
         conn.commit()
 
+def update_ltm_node_embedding(node_id: int, new_embedding: str):
+    with get_connection() as conn:
+        conn.execute("UPDATE alex_ltm_nodes SET embedding = ? WHERE id = ?", (new_embedding, node_id))
+        conn.commit()
+
 def delete_ltm_node(node_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM alex_ltm_nodes WHERE id = ?", (node_id,))
