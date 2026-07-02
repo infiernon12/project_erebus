@@ -29,6 +29,7 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardBut
 
 import database as db
 import alex_vibe.alex_brain as alex_brain
+from alex_vibe.alex_brain import process_and_filter_message
 
 
 # Load environment variables
@@ -822,36 +823,6 @@ async def chat_handler(message: types.Message):
                 await status_msg.edit_text("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
             except Exception:
                 await message.answer("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
-
-
-def process_and_filter_message(msg_text: str) -> str:
-    if not msg_text:
-        return ""
-    
-    cleaned = msg_text.strip()
-    import re
-    
-    # 1. Вырезаем любые внутренние размышления в тегах <thought>
-    cleaned = re.sub(r'<thought>.*?</thought>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    
-    # 2. Ищем и извлекаем текст из тегов <message>
-    message_match = re.search(r'<message>(.*?)</message>', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    if message_match:
-        cleaned = message_match.group(1).strip()
-    
-    # Резервный шаг: если тегов нет, убираем системные маркеры вручную
-    cleaned = re.sub(r'\[.*?\]', '', cleaned).strip()
-    
-    # 3. Лингвистический барьер (Защита от зеркалирования промпта)
-    # Если бот пытается говорить во втором лице ("Ты...", "Тебе..."), это ошибка роли.
-    lower_text = cleaned.lower()
-    invalid_patterns = ["ты чувствуешь", "тебе одиноко", "твои окситоцин", "твое состояние"]
-    for pattern in invalid_patterns:
-        if pattern in lower_text:
-            logger.warning(f"Message blocked due to role leak: {cleaned}")
-            return "" # Блокируем отправку некорректного сообщения
-            
-    return cleaned
 
 
 async def trigger_first_strike_message(user_id: int):

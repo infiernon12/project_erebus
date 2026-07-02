@@ -60,8 +60,10 @@ def mock_create(*args, **kwargs):
         print(f"MOCK MERGE: system_msg={system_msg!r}")
         if "Python" in system_msg or "python" in system_msg:
             mock_message.content = "Я живу в Эстонии и люблю обучать Python."
+        elif "Тест" in system_msg or "связи" in system_msg:
+            mock_message.content = "Тест связи консолидирован."
         else:
-            mock_message.content = "Руслан — мой близкий друг."
+            mock_message.content = "Объединенный факт."
         print(f"MOCK MERGE RESULT: {mock_message.content!r}")
     elif "Сейчас твой собеседник молчит" in system_msg:
         if "поисковый запрос в интернет" in system_msg:

@@ -310,6 +310,7 @@ def get_alex_emotions(user_id: int) -> dict:
     merged["noradrenaline"] = relational_emotions["noradrenaline"]
     merged["base_oxytocin"] = relational_emotions["base_oxytocin"]
     merged["base_noradrenaline"] = relational_emotions["base_noradrenaline"]
+    merged["last_interaction"] = relational_emotions["last_interaction"]
     return merged
 
 def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: str):

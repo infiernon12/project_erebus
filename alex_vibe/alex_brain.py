@@ -2697,7 +2697,7 @@ def verify_active_hypotheses(user_id: int, user_text: str, retrieved_memories: l
     except Exception as e:
         logger.error(f"Error verifying hypotheses: {e}")
 
-def budget_context(messages: list[dict], max_tokens_limit: int = 1800) -> list[dict]:
+def budget_context(messages: list[dict], max_tokens_limit: int = 1700) -> list[dict]:
     """
     Динамически сокращает историю диалога, если суммарный объем промпта 
     приближается к лимиту контекстного окна.
@@ -2705,8 +2705,7 @@ def budget_context(messages: list[dict], max_tokens_limit: int = 1800) -> list[d
     (актуальный запрос или результаты поиска), урезая историю в середине.
     """
     def estimate_tokens(msgs):
-        total_chars = sum(len(m["content"]) for m in msgs)
-        return total_chars // 3.5  # 1 токен ~ 3.5 символа
+        return sum(len(m["content"]) for m in msgs) // 1.7
         
     if estimate_tokens(messages) <= max_tokens_limit:
         return messages
@@ -2714,9 +2713,6 @@ def budget_context(messages: list[dict], max_tokens_limit: int = 1800) -> list[d
     logger.warning(f"Context budget exceeded ({estimate_tokens(messages)} tokens). Truncating dialogue history...")
     
     if len(messages) <= 2:
-        if len(messages) > 0:
-            first_msg = messages[0]
-            first_msg["content"] = first_msg["content"][:1000] + "\n[Контекст частично урезан для экономии памяти]"
         return messages
 
     msgs = list(messages)
@@ -2725,13 +2721,41 @@ def budget_context(messages: list[dict], max_tokens_limit: int = 1800) -> list[d
     middle_msgs = msgs[1:-1]
     
     while estimate_tokens([first_msg, last_msg] + middle_msgs) > max_tokens_limit:
-        if len(middle_msgs) > 1:
+        if len(middle_msgs) > 0:
             middle_msgs.pop(0)
         else:
-            first_msg["content"] = first_msg["content"][:1000] + "\n[Контекст частично урезан для экономии памяти]"
+            logger.error("System prompt itself is too large! Check retrieve_memories limits.")
             break
             
     return [first_msg] + middle_msgs + [last_msg]
+
+def process_and_filter_message(msg_text: str) -> str:
+    if not msg_text:
+        return ""
+    
+    cleaned = msg_text.strip()
+    
+    # 1. Вырезаем любые внутренние размышления в тегах <thought>
+    cleaned = re.sub(r'<thought>.*?</thought>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 2. Ищем и извлекаем текст из тегов <message>
+    message_match = re.search(r'<message>(.*?)</message>', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    if message_match:
+        cleaned = message_match.group(1).strip()
+    
+    # Резервный шаг: если тегов нет, убираем системные маркеры вручную
+    cleaned = re.sub(r'\[.*?\]', '', cleaned).strip()
+    
+    # 3. Лингвистический барьер (Защита от зеркалирования промпта)
+    # Если бот пытается говорить во втором лице ("Ты...", "Тебе..."), это ошибка роли.
+    lower_text = cleaned.lower()
+    invalid_patterns = ["ты чувствуешь", "тебе одиноко", "твои окситоцин", "твое состояние"]
+    for pattern in invalid_patterns:
+        if pattern in lower_text:
+            logger.warning(f"Message blocked due to role leak: {cleaned}")
+            return "" # Блокируем отправку некорректного сообщения
+            
+    return cleaned
 
 async def handle_alex_chat(message: Message, user: dict, user_text: str, status_msg: Message):
     user_id = message.from_user.id
@@ -3171,6 +3195,9 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     
     if response and not (response.startswith("✅") or response.startswith("⚠️")):
         response = post_process_speech(response)
+        response = process_and_filter_message(response)
+        if not response:
+            response = "Ой, что-то я задумалась совсем... О чем мы говорили?" 
 
     # 6. Save exchange to STM & global history
     charge = (
