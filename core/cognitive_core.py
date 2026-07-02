@@ -25,7 +25,8 @@ class CognitiveTransformerCore:
                     n_ctx=self.n_ctx,
                     n_threads=4,
                     n_gpu_layers=-1,
-                    verbose=False
+                    verbose=False,
+                    cache=True
                 )
                 logger.info("Cognitive model loaded successfully with GPU offload.")
                 return True
@@ -38,7 +39,8 @@ class CognitiveTransformerCore:
                         n_ctx=self.n_ctx,
                         n_threads=4,
                         n_gpu_layers=0,
-                        verbose=False
+                        verbose=False,
+                        cache=True
                     )
                     logger.info("Cognitive model loaded successfully on CPU.")
                     return True
@@ -85,8 +87,7 @@ class CognitiveTransformerCore:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
-                repeat_penalty=repeat_penalty,
-                cache_prompt=True
+                repeat_penalty=repeat_penalty
             )
             result = response["choices"][0]["message"]["content"]
             return result

@@ -2701,7 +2701,7 @@ def verify_active_hypotheses(user_id: int, user_text: str, retrieved_memories: l
     except Exception as e:
         logger.error(f"Error verifying hypotheses: {e}")
 
-def budget_context(messages: list[dict], max_tokens_limit: int = 1700) -> list[dict]:
+def budget_context(messages: list[dict], max_tokens_limit: int = 3000) -> list[dict]:
     """
     Динамически сокращает историю диалога, если суммарный объем промпта 
     приближается к лимиту контекстного окна.
@@ -3012,7 +3012,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     messages.append({"role": "user", "content": user_text})
     
     # Budget context to prevent token overflow
-    messages = budget_context(messages, max_tokens_limit=1800)
+    messages = budget_context(messages, max_tokens_limit=3000)
     
     chat_completion = await asyncio.to_thread(
         safe_groq_chat_completion,
@@ -3068,7 +3068,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         })
         
         # Budget context to prevent token overflow after search results injection
-        messages = budget_context(messages, max_tokens_limit=1800)
+        messages = budget_context(messages, max_tokens_limit=3000)
         
         chat_completion = await asyncio.to_thread(
             safe_groq_chat_completion,
