@@ -1151,7 +1151,7 @@ def corrupt_text(text: str, severity: float) -> str:
 def reconsolidate_node_text(user_id: int, node_text: str, context: str) -> str:
     """Uses LLM to rephrase memory statement based on active context, ensuring organic recall."""
     if not db.TESTING:
-        # In production, bypass slow LLM reconconsolidation to make replies instant
+        # In production, bypass slow LLM reconsolidation to make replies instant
         return node_text
 
     prompt = (
@@ -1171,7 +1171,7 @@ def reconsolidate_node_text(user_id: int, node_text: str, context: str) -> str:
         )
         return completion.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"Error during memory reconconsolidation: {e}")
+        logger.error(f"Error during memory reconsolidation: {e}")
         return node_text
 
 def retrieve_memories(user_id: int, query_text: str, limit: int = 2) -> list[str]:
@@ -3235,4 +3235,4 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
         except Exception as e_bg:
             logger.error(f"Error in post_response_processing: {e_bg}")
 
-    asyncio.create_task(post_response_processing(user_id, user_text, retrieved))
+    return asyncio.create_task(post_response_processing(user_id, user_text, retrieved))

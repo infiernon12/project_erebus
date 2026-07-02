@@ -35,6 +35,14 @@ from alex_vibe.alex_brain import process_and_filter_message
 # Load environment variables
 load_dotenv()
 
+# Per-user locks to prevent race conditions on database updates (double-texting protection)
+USER_LOCKS = {}
+
+def get_user_lock(user_id: int) -> asyncio.Lock:
+    if user_id not in USER_LOCKS:
+        USER_LOCKS[user_id] = asyncio.Lock()
+    return USER_LOCKS[user_id]
+
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
@@ -780,49 +788,52 @@ async def chat_handler(message: types.Message):
     user_id = message.from_user.id
     user_text = message.text
     
-
-    user = db.get_user(user_id)
-    if not user:
-        db.register_user(user_id, message.from_user.username, message.from_user.first_name)
+    lock = get_user_lock(user_id)
+    async with lock:
         user = db.get_user(user_id)
-        
-
-    # Local Regex Preprocessor for Active Memory
-    if user_text:
-        import re
-        # Extract phone numbers (+79991234567, 8-999-123-45-67, etc.)
-        phone_match = re.search(r'\+?[78][\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', user_text)
-        if phone_match:
-            phone_val = phone_match.group(0).strip()
-            db.set_active_memory(user_id, "phone", phone_val, confidence=1.0)
-            logger.info(f"Local preprocessor extracted phone: {phone_val} for user {user_id}")
+        if not user:
+            db.register_user(user_id, message.from_user.username, message.from_user.first_name)
+            user = db.get_user(user_id)
             
 
-        # Extract file references (.txt, .md, .py)
-        file_matches = re.findall(r'\b[a-zA-Z0-9_\-\./]+\.(?:txt|md|py)\b', user_text)
-        if file_matches:
-            files_str = ", ".join(file_matches)
-            db.set_active_memory(user_id, "file_ref", files_str, confidence=1.0)
-            logger.info(f"Local preprocessor extracted file_ref: {files_str} for user {user_id}")
+        # Local Regex Preprocessor for Active Memory
+        if user_text:
+            import re
+            # Extract phone numbers (+79991234567, 8-999-123-45-67, etc.)
+            phone_match = re.search(r'\+?[78][\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', user_text)
+            if phone_match:
+                phone_val = phone_match.group(0).strip()
+                db.set_active_memory(user_id, "phone", phone_val, confidence=1.0)
+                logger.info(f"Local preprocessor extracted phone: {phone_val} for user {user_id}")
+                
+
+            # Extract file references (.txt, .md, .py)
+            file_matches = re.findall(r'\b[a-zA-Z0-9_\-\./]+\.(?:txt|md|py)\b', user_text)
+            if file_matches:
+                files_str = ", ".join(file_matches)
+                db.set_active_memory(user_id, "file_ref", files_str, confidence=1.0)
+                logger.info(f"Local preprocessor extracted file_ref: {files_str} for user {user_id}")
 
 
-    status_msg = await message.answer("🧠 *Алекс думает...*")
-    try:
-        await alex_brain.handle_alex_chat(message, dict(user), user_text, status_msg)
-    except Exception as e:
-        logger.error(f"Error handling message from {user_id}: {e}", exc_info=True)
-        now = datetime.now()
-        if alex_brain.API_COOLDOWN_UNTIL and now < alex_brain.API_COOLDOWN_UNTIL:
-            cooldown_text = "⏳ **[СИСТЕМА]** Исчерпаны лимиты API. Ожидание. Алекс вернется через 15 минут."
-            try:
-                await status_msg.edit_text(cooldown_text, parse_mode="Markdown")
-            except Exception:
-                await message.answer(cooldown_text, parse_mode="Markdown")
-        else:
-            try:
-                await status_msg.edit_text("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
-            except Exception:
-                await message.answer("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
+        status_msg = await message.answer("🧠 *Алекс думает...*")
+        try:
+            bg_task = await alex_brain.handle_alex_chat(message, dict(user), user_text, status_msg)
+            if bg_task:
+                await bg_task
+        except Exception as e:
+            logger.error(f"Error handling message from {user_id}: {e}", exc_info=True)
+            now = datetime.now()
+            if alex_brain.API_COOLDOWN_UNTIL and now < alex_brain.API_COOLDOWN_UNTIL:
+                cooldown_text = "⏳ **[СИСТЕМА]** Исчерпаны лимиты API. Ожидание. Алекс вернется через 15 минут."
+                try:
+                    await status_msg.edit_text(cooldown_text, parse_mode="Markdown")
+                except Exception:
+                    await message.answer(cooldown_text, parse_mode="Markdown")
+            else:
+                try:
+                    await status_msg.edit_text("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
+                except Exception:
+                    await message.answer("⚠️ **[СИСТЕМНЫЙ СБОЙ]** Произошла ошибка при обращении к когнитивной матрице.")
 
 
 async def trigger_first_strike_message(user_id: int):

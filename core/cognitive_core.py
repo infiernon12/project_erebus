@@ -16,11 +16,10 @@ class CognitiveTransformerCore:
             return True
             
         if os.path.exists(self.model_path):
+            from llama_cpp import Llama
+            logger.info(f"Dynamically loading cognitive model from {self.model_path}...")
             try:
-                from llama_cpp import Llama
-                logger.info(f"Dynamically loading cognitive model from {self.model_path}...")
-                
-                # Load with CPU optimization (4 threads suited for Ryzen 3)
+                # 1. Try to load with GPU acceleration
                 self._model = Llama(
                     model_path=self.model_path,
                     n_ctx=self.n_ctx,
@@ -28,12 +27,25 @@ class CognitiveTransformerCore:
                     n_gpu_layers=-1,
                     verbose=False
                 )
-                logger.info("Cognitive model loaded successfully.")
+                logger.info("Cognitive model loaded successfully with GPU offload.")
                 return True
-            except Exception as e:
-                logger.error(f"Failed to dynamically load cognitive model: {e}")
-                self._model = None
-                return False
+            except Exception as gpu_err:
+                logger.warning(f"Failed to load model on GPU: {gpu_err}. Falling back to CPU.")
+                try:
+                    # 2. Fall back to pure CPU
+                    self._model = Llama(
+                        model_path=self.model_path,
+                        n_ctx=self.n_ctx,
+                        n_threads=4,
+                        n_gpu_layers=0,
+                        verbose=False
+                    )
+                    logger.info("Cognitive model loaded successfully on CPU.")
+                    return True
+                except Exception as cpu_err:
+                    logger.error(f"Failed to load cognitive model even on CPU: {cpu_err}")
+                    self._model = None
+                    return False
         else:
             logger.warning(f"Cognitive model file not found at {self.model_path}. Running in simulation mode.")
             return False
