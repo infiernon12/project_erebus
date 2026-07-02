@@ -26,7 +26,7 @@ class CognitiveTransformerCore:
                     n_threads=4,
                     n_gpu_layers=-1,
                     verbose=False,
-                    cache=True
+                    cache=False
                 )
                 logger.info("Cognitive model loaded successfully with GPU offload.")
                 return True
@@ -40,7 +40,7 @@ class CognitiveTransformerCore:
                         n_threads=4,
                         n_gpu_layers=0,
                         verbose=False,
-                        cache=True
+                        cache=False
                     )
                     logger.info("Cognitive model loaded successfully on CPU.")
                     return True
