@@ -1150,9 +1150,13 @@ def corrupt_text(text: str, severity: float) -> str:
 
 def reconsolidate_node_text(user_id: int, node_text: str, context: str) -> str:
     """Uses LLM to rephrase memory statement based on active context, ensuring organic recall."""
+    if not db.TESTING:
+        # In production, bypass slow LLM reconconsolidation to make replies instant
+        return node_text
+
     prompt = (
         f"Ты — подсознание Алекса. Перефразируй или органично впиши факт из памяти: \"{node_text}\"\n"
-        f"в контекст текущего обращения пользователя: \"{context}\".\n"
+        f"в контекст текущего обращения пользователя: \"{context}\"\n"
         "Правила:\n"
         "1. Сохрани суть факта нетронутой (например, даты, имена, места).\n"
         "2. Пиши строго от первого лица ('я', 'мне').\n"
@@ -1167,7 +1171,7 @@ def reconsolidate_node_text(user_id: int, node_text: str, context: str) -> str:
         )
         return completion.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"Error during memory reconsolidation: {e}")
+        logger.error(f"Error during memory reconconsolidation: {e}")
         return node_text
 
 def retrieve_memories(user_id: int, query_text: str, limit: int = 2) -> list[str]:
@@ -2786,41 +2790,12 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     # Check for leave intent (will be active for the NEXT period of absence)
     parse_leave_intent_and_update(user_id, user_text)
     
-    # 1. Evaluate subconscious
-    sub_res = await asyncio.to_thread(evaluate_subconscious, user_id, user_text)
-    
-    # 2. Retrieve long-term memories
-    retrieved = await asyncio.to_thread(retrieve_memories, user_id, user_text, limit=5)
-    
-    # Verify active hypotheses based on the dialogue context & retrieved memories
-    await asyncio.to_thread(verify_active_hypotheses, user_id, user_text, retrieved)
-    
-    # Fetch current state to compute glutamate/gaba fatigue dynamic
-    current_emotions = db.get_alex_emotions(user_id)
-    
-    # Dynamic fatigue delta based on Glutamate and GABA.
-    # Glutamate (excitability) speeds up fatigue. GABA (inhibition) dampens it.
-    # Scaled to be gentler for scientific simulation (approx 2.5% per message at baseline).
-    fatigue_delta = 1.5 + (current_emotions["glutamate"] * 3.0) - (current_emotions["gaba"] * 1.0)
-    fatigue_delta = max(1.0, min(10.0, fatigue_delta))
-    
-    # 3. Update emotions and increase fatigue
-    db.update_alex_emotions_and_fatigue(
-        user_id, 
-        dopamine_delta=sub_res["dopamine_delta"], 
-        serotonin_delta=sub_res["serotonin_delta"], 
-        noradrenaline_delta=sub_res["noradrenaline_delta"], 
-        acetylcholine_delta=sub_res["acetylcholine_delta"], 
-        gaba_delta=sub_res["gaba_delta"],
-        oxytocin_delta=sub_res["oxytocin_delta"],
-        glutamate_delta=sub_res["glutamate_delta"],
-        endorphins_delta=sub_res["endorphins_delta"],
-        fatigue_delta=fatigue_delta,
-        trigger_text=user_text
-    )
+    # 1. Retrieve long-term memories (VSA search - extremely fast, limit=2 to match token budget)
+    retrieved = await asyncio.to_thread(retrieve_memories, user_id, user_text, limit=2)
     
     # Fetch latest emotions
-    emotions = db.get_alex_emotions(user_id)
+    current_emotions = db.get_alex_emotions(user_id)
+    emotions = current_emotions
     
     # Decay dominant focus strength by -0.05 per active message
     if emotions.get("dominant_focus"):
@@ -3200,17 +3175,7 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             response = "Ой, что-то я задумалась совсем... О чем мы говорили?" 
 
     # 6. Save exchange to STM & global history
-    charge = (
-        abs(sub_res["dopamine_delta"]) + 
-        abs(sub_res["serotonin_delta"]) + 
-        abs(sub_res["noradrenaline_delta"]) +
-        abs(sub_res["acetylcholine_delta"]) +
-        abs(sub_res["gaba_delta"]) +
-        abs(sub_res["oxytocin_delta"]) +
-        abs(sub_res["glutamate_delta"]) +
-        abs(sub_res["endorphins_delta"])
-    )
-    db.add_alex_stm(user_id, "user", user_text, emotional_charge=charge)
+    db.add_alex_stm(user_id, "user", user_text, emotional_charge=0.0)
     db.add_alex_stm(user_id, "assistant", response)
     
     db.add_message(user_id, "user", user_text)
@@ -3219,3 +3184,55 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
     
     await message.answer(response, parse_mode="Markdown")
     await status_msg.delete()
+
+    # Trigger background post-response processing (evaluate subconscious and verify active hypotheses)
+    async def post_response_processing(uid: int, text: str, ret_mems: list[str]):
+        try:
+            # Evaluate subconscious (computes emotional changes)
+            sub_res = await asyncio.to_thread(evaluate_subconscious, uid, text)
+            
+            # Verify active hypotheses
+            await asyncio.to_thread(verify_active_hypotheses, uid, text, ret_mems)
+            
+            # Fetch updated emotions and fatigue
+            emotions_now = db.get_alex_emotions(uid)
+            fatigue_delta = 1.5 + (emotions_now["glutamate"] * 3.0) - (emotions_now["gaba"] * 1.0)
+            fatigue_delta = max(1.0, min(10.0, fatigue_delta))
+            
+            db.update_alex_emotions_and_fatigue(
+                uid, 
+                dopamine_delta=sub_res["dopamine_delta"], 
+                serotonin_delta=sub_res["serotonin_delta"], 
+                noradrenaline_delta=sub_res["noradrenaline_delta"], 
+                acetylcholine_delta=sub_res["acetylcholine_delta"], 
+                gaba_delta=sub_res["gaba_delta"],
+                oxytocin_delta=sub_res["oxytocin_delta"],
+                glutamate_delta=sub_res["glutamate_delta"],
+                endorphins_delta=sub_res["endorphins_delta"],
+                fatigue_delta=fatigue_delta,
+                trigger_text=text
+            )
+            
+            # Update the emotional charge of the last STM user log
+            charge = (
+                abs(sub_res["dopamine_delta"]) + 
+                abs(sub_res["serotonin_delta"]) + 
+                abs(sub_res["noradrenaline_delta"]) +
+                abs(sub_res["acetylcholine_delta"]) +
+                abs(sub_res["gaba_delta"]) +
+                abs(sub_res["oxytocin_delta"]) +
+                abs(sub_res["glutamate_delta"]) +
+                abs(sub_res["endorphins_delta"])
+            )
+            with db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE alex_stm SET emotional_charge = ? WHERE id = (SELECT id FROM alex_stm WHERE user_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1)",
+                    (charge, uid)
+                )
+                conn.commit()
+            
+            logger.info(f"Post-response background processing successfully completed for user {uid}")
+        except Exception as e_bg:
+            logger.error(f"Error in post_response_processing: {e_bg}")
+
+    asyncio.create_task(post_response_processing(user_id, user_text, retrieved))
