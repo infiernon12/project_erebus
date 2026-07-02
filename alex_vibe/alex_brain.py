@@ -2171,6 +2171,36 @@ def _run_sleep_cycle_sync(user_id: int):
         except Exception as e:
             logger.error(f"Failed to generate daily journal: {e}")
 
+        # --- Hierarchical Dialogue Compression Stage ---
+        try:
+            compress_prompt = (
+                "Ты — подсознание Алекса. Сделай краткий, плотный хронологический реферат сегодняшнего общения с собеседником по имени "
+                f"{opponent_name} от первого лица.\n"
+                f"История сегодняшней переписки:\n\"\"\"\n{stm_text}\n\"\"\"\n\n"
+                "Правила:\n"
+                "1. Опиши кратко развитие диалога, ключевые темы, эмоциональные сдвиги и выводы, к которым вы пришли.\n"
+                "2. Пиши строго от первого лица ('я', 'мне', 'мой').\n"
+                "3. Длина реферата должна быть от 2 до 4 предложений. Выведи только реферат."
+            )
+            completion = safe_groq_chat_completion(
+                messages=[{"role": "system", "content": compress_prompt}],
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                temperature=0.4,
+                max_tokens=250
+            )
+            summary_text = completion.choices[0].message.content.strip()
+            emb = generate_embedding(summary_text)
+            db.add_ltm_node(
+                user_id=user_id,
+                memory_text=f"Воспоминание о диалоге с {opponent_name} за прошедший день: {summary_text}",
+                embedding=json.dumps(emb),
+                memory_type='episodic',
+                strength=1.0
+            )
+            logger.info(f"Hierarchical dialogue compression saved to LTM: {summary_text}")
+        except Exception as e:
+            logger.error(f"Failed hierarchical dialogue compression: {e}")
+
     # --- Downscaling Stage: VSA побитовый распад и забывание ---
     try:
         from core.vsa_memory import vsa_index
@@ -2385,10 +2415,19 @@ def _run_sleep_cycle_sync(user_id: int):
                             with open(filepath, "r", encoding="utf-8") as rf:
                                 file_content = rf.read()
                             
-                            paragraphs = [p.strip() for p in file_content.split("\n\n") if len(p.strip()) >= 10]
-                            if not paragraphs:
-                                paragraphs = [line.strip() for line in file_content.split("\n") if len(line.strip()) >= 15]
+                            raw_paragraphs = [p.strip() for p in file_content.split("\n\n") if len(p.strip()) >= 10]
+                            if not raw_paragraphs:
+                                raw_paragraphs = [line.strip() for line in file_content.split("\n") if len(line.strip()) >= 15]
                                 
+                            paragraphs = []
+                            for p in raw_paragraphs:
+                                start = 0
+                                while start < len(p):
+                                    chunk = p[start:start+350].strip()
+                                    if len(chunk) >= 10:
+                                        paragraphs.append(chunk)
+                                    start += 350
+                                    
                             added_chunks = 0
                             from core.vsa_memory import vsa_index
                             for p in paragraphs[:10]:

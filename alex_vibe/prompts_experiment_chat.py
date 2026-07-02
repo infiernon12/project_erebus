@@ -88,25 +88,30 @@ def get_sampler_settings(neurochemistry: dict) -> dict:
     }
 
 def get_prompt(felt_sense: str, anchor: str = "", journal: str = "", retrieved: list[str] = None, dominant: str = "", active_memory: list[dict] = None) -> str:
-    parts = [SYSTEM_PROMPT]
+    # 1. Static Prefix (always identical, cached inside GPU/RAM)
+    static_part = SYSTEM_PROMPT
     
+    # 2. Dynamic Suffix (changes every turn, formatted with clean XML tags)
+    dynamic_blocks = []
+    
+    # Personality core and daily diaries
     if anchor:
-        parts.append(f"🔒 [ФУНДАМЕНТАЛЬНЫЕ ФАКТЫ О ТВОЕЙ ЛИЧНОСТИ] (Помни их ВСЕГДА):\n{anchor}")
-        
+        dynamic_blocks.append(f"<anchor>\n{anchor}\n</anchor>")
     if journal:
-        parts.append(f"📅 [ЗАПИСИ ИЗ ДНЕВНИКА ЗА ПРЕДЫДУЩИЕ ДНИ]:\n{journal}")
+        dynamic_blocks.append(f"<journal_context>\n{journal}\n</journal_context>")
         
+    # Meta-cognition and sessions
     if dominant:
-        parts.append(f"🎯 [КОГНИТИВНАЯ ДОМИНАНТА] (Временно доминирующий в твоем разуме очаг возбуждения. Твоя текущая главная цель, фокус внимания или вопрос. Пропускай все свои рассуждения и реплики сквозь линзу этой доминанты):\n{dominant}")
+        dynamic_blocks.append(f"<cognitive_dominant>\n{dominant}\n</cognitive_dominant>")
         
     if active_memory:
         mem_vars = "\n".join([f"- {item['key']}: {item['val']}" for item in active_memory])
-        parts.append(f"📥 [АКТИВНАЯ РАБОЧАЯ ПАМЯТЬ СЕССИИ] (Текущие точные факты, цифры и задачи, упомянутые в диалоге):\n{mem_vars}")
+        dynamic_blocks.append(f"<working_memory>\n{mem_vars}\n</working_memory>")
         
     if retrieved:
         mem_str = "\n".join([f"- {m}" for m in retrieved])
-        parts.append(f"💡 [АССОЦИАТИВНЫЕ ВОСПОМИНАНИЯ, ВСПЛЫВШИЕ В ОТВЕТ НА РЕПЛИКУ]:\n{mem_str}")
+        dynamic_blocks.append(f"<retrieved_memories>\n{mem_str}\n</retrieved_memories>")
         
-    parts.append(f"🧠 [ТВОЕ ТЕКУЩЕЕ СОСТОЯНИЕ И ОЩУЩЕНИЯ] (Используй как эмоциональный фон для ответа):\n{felt_sense}")
+    dynamic_blocks.append(f"<felt_sense>\n{felt_sense}\n</felt_sense>")
     
-    return "\n\n".join(parts)
+    return f"{static_part}\n\n" + "\n\n".join(dynamic_blocks)
