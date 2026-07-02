@@ -3194,8 +3194,8 @@ async def handle_alex_chat(message: Message, user: dict, user_text: str, status_
             response = f"⚠️ Ошибка: получатель {target_name} не найден."
     
     if response and not (response.startswith("✅") or response.startswith("⚠️")):
-        response = post_process_speech(response)
         response = process_and_filter_message(response)
+        response = post_process_speech(response)
         if not response:
             response = "Ой, что-то я задумалась совсем... О чем мы говорили?" 
 

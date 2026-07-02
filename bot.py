@@ -861,6 +861,7 @@ class CognitionEngine:
     def __init__(self):
         self.tick_rate = 30.0  # Default to Epistemic
         self.state = "EPISTEMIC"
+        self.last_strike_time = {} 
 
 
     def adjust_tick_rate(self, min_idle_mins: float):
@@ -935,8 +936,9 @@ class CognitionEngine:
                     # Social Hunger Check (idle > 3 hours / 180 minutes)
                     if idle_mins > 180:
                         logger.info(f"Applying social hunger emotions decay for user {user_id} (idle for {idle_mins:.1f} mins)")
-                        emotions["oxytocin"] = max(0.1, emotions.get("oxytocin", 0.4) - 0.15)
-                        emotions["dopamine"] = max(0.2, emotions.get("dopamine", 0.5) - 0.1)
+                        tick_in_hours = self.tick_rate / 3600.0
+                        emotions["oxytocin"] = max(0.1, emotions.get("oxytocin", 0.4) - (0.15 * tick_in_hours))
+                        emotions["dopamine"] = max(0.2, emotions.get("dopamine", 0.5) - (0.10 * tick_in_hours))
                         db.save_alex_emotions(user_id, emotions)
                         
 
@@ -948,10 +950,13 @@ class CognitionEngine:
 
                         # First strike message trigger if oxytocin falls below 0.3
                         if emotions.get("oxytocin", 0.4) < 0.3:
-                            await trigger_first_strike_message(user_id)
-                            emotions = db.get_alex_emotions(user_id)
-                            last_dt = datetime.strptime(emotions["last_interaction"].split(".")[0], "%Y-%m-%d %H:%M:%S")
-                            idle_mins = (now_utc - last_dt).total_seconds() / 60.0
+                            last_strike = self.last_strike_time.get(user_id)
+                            if not last_strike or (now - last_strike).total_seconds() >= 14400:
+                                self.last_strike_time[user_id] = now
+                                await trigger_first_strike_message(user_id)
+                                emotions = db.get_alex_emotions(user_id)
+                                last_dt = datetime.strptime(emotions["last_interaction"].split(".")[0], "%Y-%m-%d %H:%M:%S")
+                                idle_mins = (now_utc - last_dt).total_seconds() / 60.0
                         
 
                     if idle_mins < min_idle_mins:
