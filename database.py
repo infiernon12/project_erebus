@@ -525,9 +525,10 @@ def set_alex_fatigue(user_id: int, value: float):
         conn.commit()
 
 def update_last_interaction(user_id: int):
-    if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+    # Обновляем timestamp как в глобальном ядре, так и в реляционной записи пользователя
     with get_connection() as conn:
+        if not TESTING:
+            conn.execute("UPDATE alex_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (GLOBAL_ALEX_ID,))
         conn.execute("UPDATE alex_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (user_id,))
         conn.commit()
 
@@ -788,15 +789,12 @@ def clear_active_memory(user_id: int):
         conn.commit()
 
 def save_alex_emotions(user_id: int, emotions: dict):
-    # Split saving for testing and production
     global_id = user_id if TESTING else GLOBAL_ALEX_ID
-    rel_id = user_id
-
     with get_connection() as conn:
-        # 1. Update general cognitive parameters in global profile
+        # Обновляем глобальное эмоциональное ядро Алекса
         conn.execute(
             """UPDATE alex_emotions 
-               SET dopamine = ?, serotonin = ?, acetylcholine = ?, gaba = ?, glutamate = ?, endorphins = ?, fatigue = ?, last_interaction = CURRENT_TIMESTAMP 
+               SET dopamine = ?, serotonin = ?, acetylcholine = ?, gaba = ?, glutamate = ?, endorphins = ?, fatigue = ?
                WHERE user_id = ?""",
             (
                 emotions.get("dopamine", 0.5),
@@ -809,16 +807,16 @@ def save_alex_emotions(user_id: int, emotions: dict):
                 global_id
             )
         )
-        # 2. Update individual relational parameters in user's profile
+        # Обновляем индивидуальные реляционные параметры для конкретного юзера
         if not TESTING:
             conn.execute(
                 """UPDATE alex_emotions 
-                   SET oxytocin = ?, noradrenaline = ?, last_interaction = CURRENT_TIMESTAMP 
+                   SET oxytocin = ?, noradrenaline = ?
                    WHERE user_id = ?""",
                 (
                     emotions.get("oxytocin", 0.4),
                     emotions.get("noradrenaline", 0.4),
-                    rel_id
+                    user_id
                 )
             )
         conn.commit()
