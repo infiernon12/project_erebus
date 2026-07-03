@@ -26,7 +26,7 @@ class TestAlexCognitionCore(unittest.TestCase):
     def test_cyrillic_token_budgeting(self):
         """Тест 1: Проверка лимитов контекста под жесткие кириллические рамки (коэффициент 1.7)"""
         long_history = [
-            {"role": "system", "content": "Ты — Алекс. " * 50},  # ~350 токенов
+            {"role": "system", "content": "Ты — Алиса. " * 50},  # ~350 токенов
             {"role": "user", "content": "Привет, расскажи длинную историю про свои цифровые сны " * 10}, # ~500 токенов
             {"role": "assistant", "content": "Мне снилось, что я лечу через медные провода системных плат " * 15}, # ~800 токенов
             {"role": "user", "content": "И что было дальше?"} # Текущий запрос
@@ -37,7 +37,7 @@ class TestAlexCognitionCore(unittest.TestCase):
         
         # Проверяем, что системный промпт (индекс 0) и последний запрос (индекс -1) сохранены нетронутыми
         self.assertEqual(budgeted[0]["role"], "system")
-        self.assertTrue("Ты — Алекс." in budgeted[0]["content"])
+        self.assertTrue("Ты — Алиса." in budgeted[0]["content"])
         self.assertEqual(budgeted[-1]["content"], "И что было дальше?")
         
         # Проверяем, что средние сообщения (история) были урезаны для входа в рамки памяти
