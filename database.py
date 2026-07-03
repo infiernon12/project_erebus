@@ -541,7 +541,30 @@ def add_alex_stm(user_id: int, role: str, content: str, emotional_charge: float 
         conn.commit()
         return cursor.lastrowid
 
+def get_users_with_pending_stm(user_ids: list[int] = None) -> set:
+    """Returns a set of user IDs that have at least one pending STM entry. If user_ids is provided, restricts to those IDs."""
+    if user_ids is not None and len(user_ids) == 0:
+        return set()
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if user_ids:
+            # Chunk the user_ids to avoid SQLite variable limits (max 999 or 32766)
+            chunk_size = 900
+            result = set()
+            for i in range(0, len(user_ids), chunk_size):
+                chunk = user_ids[i:i+chunk_size]
+                placeholders = ','.join('?' * len(chunk))
+                query = f"SELECT DISTINCT user_id FROM alex_stm WHERE user_id IN ({placeholders})"
+                cursor.execute(query, chunk)
+                result.update({r["user_id"] for r in cursor.fetchall()})
+            return result
+        else:
+            cursor.execute("SELECT DISTINCT user_id FROM alex_stm")
+            return {r["user_id"] for r in cursor.fetchall()}
+
 def get_alex_stm(user_id: int, limit: int = 15) -> list:
+
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
