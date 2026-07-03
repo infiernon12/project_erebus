@@ -32,7 +32,7 @@ COGNITIVE_CONFIG = {
     "reflective_distrust_weight": -0.20
 }
 
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 # Track last search time for Curiosity Engine (user_id -> datetime)
 last_search_time = {}
 
