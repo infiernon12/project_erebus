@@ -32,7 +32,7 @@ def execute_local_completion(messages: list, model: str, temperature: float = 0.
     if user_id is not None:
         try:
             import database as db
-            emotions = db.get_alex_emotions(user_id)
+            emotions = db.get_alisa_emotions(user_id)
         except Exception as e:
             logger.error(f"Error fetching emotions for user {user_id}: {e}")
 

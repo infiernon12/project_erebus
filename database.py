@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 UTC = timezone.utc
 DB_PATH = os.path.join(os.path.dirname(__file__), "database.db")
-GLOBAL_ALEX_ID = 571505504
+GLOBAL_ALISA_ID = 571505504
 TESTING = False
 
 def get_connection():
@@ -37,9 +37,9 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Alex's Emotions (Neurotransmitters & Baselines)
+        # Alisa's Emotions (Neurotransmitters & Baselines)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_emotions (
+            CREATE TABLE IF NOT EXISTS alisa_emotions (
                 user_id INTEGER PRIMARY KEY,
                 dopamine REAL DEFAULT 0.5,
                 serotonin REAL DEFAULT 0.5,
@@ -68,9 +68,9 @@ def init_db():
                 leave_reason TEXT DEFAULT NULL
             )
         """)
-        # Alex's Short-Term Memory (STM)
+        # Alisa's Short-Term Memory (STM)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_stm (
+            CREATE TABLE IF NOT EXISTS alisa_stm (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 role TEXT,
@@ -79,9 +79,9 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Alex's Long-Term Memory (LTM) Nodes
+        # Alisa's Long-Term Memory (LTM) Nodes
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_ltm_nodes (
+            CREATE TABLE IF NOT EXISTS alisa_ltm_nodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 memory_text TEXT,
@@ -95,9 +95,9 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Alex's Long-Term Memory (LTM) Edges
+        # Alisa's Long-Term Memory (LTM) Edges
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_ltm_edges (
+            CREATE TABLE IF NOT EXISTS alisa_ltm_edges (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 source_id INTEGER,
@@ -105,22 +105,22 @@ def init_db():
                 weight REAL DEFAULT 0.5,
                 association_type TEXT DEFAULT 'semantic',  -- 'semantic', 'causal', 'temporal', 'dream_synthesis', etc.
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (source_id) REFERENCES alex_ltm_nodes(id) ON DELETE CASCADE,
-                FOREIGN KEY (target_id) REFERENCES alex_ltm_nodes(id) ON DELETE CASCADE
+                FOREIGN KEY (source_id) REFERENCES alisa_ltm_nodes(id) ON DELETE CASCADE,
+                FOREIGN KEY (target_id) REFERENCES alisa_ltm_nodes(id) ON DELETE CASCADE
             )
         """)
-        # Alex's Weak Flow thoughts
+        # Alisa's Weak Flow thoughts
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_weak_flow (
+            CREATE TABLE IF NOT EXISTS alisa_weak_flow (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 thought TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Alex's Permanent Thought History
+        # Alisa's Permanent Thought History
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_thought_history (
+            CREATE TABLE IF NOT EXISTS alisa_thought_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 thought TEXT,
@@ -128,9 +128,9 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Alex's Active Memory (Working Memory)
+        # Alisa's Active Memory (Working Memory)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_active_memory (
+            CREATE TABLE IF NOT EXISTS alisa_active_memory (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 key TEXT NOT NULL,
@@ -141,21 +141,20 @@ def init_db():
                 UNIQUE(user_id, key)
             )
         """)
-        # Alex's Hypotheses
+        # Alisa's Hypotheses
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_hypotheses (
+            CREATE TABLE IF NOT EXISTS alisa_hypotheses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
-                thought TEXT NOT NULL,  -- wait: in AIshnitza it was hypothesis_text TEXT NOT NULL
-                hypothesis_text TEXT, -- let's keep both for safety
+                hypothesis_text TEXT NOT NULL,
                 confidence REAL DEFAULT 0.5,
                 status TEXT DEFAULT 'active',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Alex's Neurotransmitter History Logs
+        # Alisa's Neurotransmitter History Logs
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS alex_neuro_history (
+            CREATE TABLE IF NOT EXISTS alisa_neuro_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 dopamine REAL,
@@ -182,15 +181,15 @@ def init_db():
         """)
         conn.commit()
 
-        # Migration: add recall_count to alex_ltm_nodes if it does not exist
+        # Migration: add recall_count to alisa_ltm_nodes if it does not exist
         try:
             cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(alex_ltm_nodes)")
+            cursor.execute("PRAGMA table_info(alisa_ltm_nodes)")
             columns = [row["name"] for row in cursor.fetchall()]
             if "recall_count" not in columns:
-                conn.execute("ALTER TABLE alex_ltm_nodes ADD COLUMN recall_count INTEGER DEFAULT 1")
+                conn.execute("ALTER TABLE alisa_ltm_nodes ADD COLUMN recall_count INTEGER DEFAULT 1")
                 conn.commit()
-                print("Database migration: Added recall_count column to alex_ltm_nodes table.")
+                print("Database migration: Added recall_count column to alisa_ltm_nodes table.")
         except Exception as e:
             print(f"Error running database migration: {e}")
 
@@ -261,20 +260,20 @@ def clear_chat_history(user_id: int):
         conn.execute("DELETE FROM messages WHERE user_id = ?", (user_id,))
         conn.commit()
 
-def _get_alex_emotions_row(user_id: int) -> dict:
+def _get_alisa_emotions_row(user_id: int) -> dict:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """SELECT dopamine, serotonin, noradrenaline, acetylcholine, gaba, oxytocin, glutamate, endorphins, fatigue,
                       base_dopamine, base_serotonin, base_noradrenaline, base_acetylcholine, base_gaba, base_oxytocin, base_glutamate, base_endorphins,
                       last_interaction, last_dream, dominant_focus, dominant_strength, expected_return, leave_reason
-               FROM alex_emotions WHERE user_id = ?""", 
+               FROM alisa_emotions WHERE user_id = ?""",
             (user_id,)
         )
         row = cursor.fetchone()
         if not row:
             cursor.execute(
-                """INSERT INTO alex_emotions 
+                """INSERT INTO alisa_emotions
                    (user_id, dopamine, serotonin, noradrenaline, acetylcholine, gaba, oxytocin, glutamate, endorphins, fatigue,
                     base_dopamine, base_serotonin, base_noradrenaline, base_acetylcholine, base_gaba, base_oxytocin, base_glutamate, base_endorphins) 
                    VALUES (?, 0.5, 0.5, 0.4, 0.6, 0.5, 0.4, 0.5, 0.3, 0.0, 0.5, 0.5, 0.3, 0.5, 0.5, 0.3, 0.4, 0.15)""",
@@ -296,15 +295,15 @@ def _get_alex_emotions_row(user_id: int) -> dict:
             "leave_reason": row[22]
         }
 
-def get_alex_emotions(user_id: int) -> dict:
+def get_alisa_emotions(user_id: int) -> dict:
     if TESTING:
-        return _get_alex_emotions_row(user_id)
+        return _get_alisa_emotions_row(user_id)
     
-    global_emotions = _get_alex_emotions_row(GLOBAL_ALEX_ID)
-    if user_id == GLOBAL_ALEX_ID:
+    global_emotions = _get_alisa_emotions_row(GLOBAL_ALISA_ID)
+    if user_id == GLOBAL_ALISA_ID:
         return global_emotions
     
-    relational_emotions = _get_alex_emotions_row(user_id)
+    relational_emotions = _get_alisa_emotions_row(user_id)
     merged = dict(global_emotions)
     merged["oxytocin"] = relational_emotions["oxytocin"]
     merged["noradrenaline"] = relational_emotions["noradrenaline"]
@@ -313,38 +312,38 @@ def get_alex_emotions(user_id: int) -> dict:
     merged["last_interaction"] = relational_emotions["last_interaction"]
     return merged
 
-def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: str):
+def update_alisa_leave_status(user_id: int, expected_return: str, leave_reason: str):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         conn.execute(
-            "UPDATE alex_emotions SET expected_return = ?, leave_reason = ? WHERE user_id = ?",
+            "UPDATE alisa_emotions SET expected_return = ?, leave_reason = ? WHERE user_id = ?",
             (expected_return, leave_reason, user_id)
         )
         conn.commit()
 
-def update_alex_dominant(user_id: int, focus: str, strength: float):
+def update_alisa_dominant(user_id: int, focus: str, strength: float):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         conn.execute(
-            "UPDATE alex_emotions SET dominant_focus = ?, dominant_strength = ? WHERE user_id = ?",
+            "UPDATE alisa_emotions SET dominant_focus = ?, dominant_strength = ? WHERE user_id = ?",
             (focus, strength, user_id)
         )
         conn.commit()
 
-def set_alex_last_dream(user_id: int, last_dream: str):
+def set_alisa_last_dream(user_id: int, last_dream: str):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
-        conn.execute("UPDATE alex_emotions SET last_dream = ? WHERE user_id = ?", (last_dream, user_id))
+        conn.execute("UPDATE alisa_emotions SET last_dream = ? WHERE user_id = ?", (last_dream, user_id))
         conn.commit()
 
-def clear_alex_last_dream(user_id: int):
+def clear_alisa_last_dream(user_id: int):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
-        conn.execute("UPDATE alex_emotions SET last_dream = NULL WHERE user_id = ?", (user_id,))
+        conn.execute("UPDATE alisa_emotions SET last_dream = NULL WHERE user_id = ?", (user_id,))
         conn.commit()
 
 NEURO_BASELINES = {
@@ -369,7 +368,7 @@ NEURO_DECAY = {
     "endorphins": 0.20
 }
 
-def _update_alex_emotions_and_fatigue_raw(
+def _update_alisa_emotions_and_fatigue_raw(
     user_id: int, 
     dopamine_delta: float, 
     serotonin_delta: float, 
@@ -382,7 +381,7 @@ def _update_alex_emotions_and_fatigue_raw(
     fatigue_delta: float,
     trigger_text: str = ""
 ):
-    current = _get_alex_emotions_row(user_id)
+    current = _get_alisa_emotions_row(user_id)
     
     # Calculate dt_minutes elapsed since last_interaction
     last_int_str = current.get("last_interaction")
@@ -435,13 +434,13 @@ def _update_alex_emotions_and_fatigue_raw(
     
     with get_connection() as conn:
         conn.execute(
-            """UPDATE alex_emotions 
+            """UPDATE alisa_emotions
                SET dopamine = ?, serotonin = ?, noradrenaline = ?, acetylcholine = ?, gaba = ?, oxytocin = ?, glutamate = ?, endorphins = ?, fatigue = ?, last_interaction = CURRENT_TIMESTAMP 
                WHERE user_id = ?""",
             (new_da, new_5ht, new_ne, new_ach, new_gaba, new_oxt, new_glu, new_end, new_fatigue, user_id)
         )
         conn.execute(
-            """INSERT INTO alex_neuro_history 
+            """INSERT INTO alisa_neuro_history
                (user_id, dopamine, serotonin, noradrenaline, acetylcholine, gaba, oxytocin, glutamate, endorphins, fatigue,
                 dopamine_delta, serotonin_delta, noradrenaline_delta, acetylcholine_delta, gaba_delta, oxytocin_delta, glutamate_delta, endorphins_delta, fatigue_delta,
                 trigger_text)
@@ -452,7 +451,7 @@ def _update_alex_emotions_and_fatigue_raw(
         )
         conn.commit()
 
-def update_alex_emotions_and_fatigue(
+def update_alisa_emotions_and_fatigue(
     user_id: int, 
     dopamine_delta: float, 
     serotonin_delta: float, 
@@ -466,16 +465,16 @@ def update_alex_emotions_and_fatigue(
     trigger_text: str = ""
 ):
     if TESTING:
-        _update_alex_emotions_and_fatigue_raw(
+        _update_alisa_emotions_and_fatigue_raw(
             user_id, dopamine_delta, serotonin_delta, noradrenaline_delta,
             acetylcholine_delta, gaba_delta, oxytocin_delta, glutamate_delta,
             endorphins_delta, fatigue_delta, trigger_text
         )
         return
 
-    if user_id == GLOBAL_ALEX_ID:
-        _update_alex_emotions_and_fatigue_raw(
-            user_id=GLOBAL_ALEX_ID,
+    if user_id == GLOBAL_ALISA_ID:
+        _update_alisa_emotions_and_fatigue_raw(
+            user_id=GLOBAL_ALISA_ID,
             dopamine_delta=dopamine_delta,
             serotonin_delta=serotonin_delta,
             noradrenaline_delta=noradrenaline_delta,
@@ -488,8 +487,8 @@ def update_alex_emotions_and_fatigue(
             trigger_text=trigger_text
         )
     else:
-        _update_alex_emotions_and_fatigue_raw(
-            user_id=GLOBAL_ALEX_ID,
+        _update_alisa_emotions_and_fatigue_raw(
+            user_id=GLOBAL_ALISA_ID,
             dopamine_delta=dopamine_delta,
             serotonin_delta=serotonin_delta,
             noradrenaline_delta=0.0,
@@ -501,7 +500,7 @@ def update_alex_emotions_and_fatigue(
             fatigue_delta=fatigue_delta,
             trigger_text=trigger_text
         )
-        _update_alex_emotions_and_fatigue_raw(
+        _update_alisa_emotions_and_fatigue_raw(
             user_id=user_id,
             dopamine_delta=0.0,
             serotonin_delta=0.0,
@@ -515,53 +514,53 @@ def update_alex_emotions_and_fatigue(
             trigger_text=trigger_text
         )
 
-def set_alex_fatigue(user_id: int, value: float):
+def set_alisa_fatigue(user_id: int, value: float):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
-    get_alex_emotions(user_id)
+        user_id = GLOBAL_ALISA_ID
+    get_alisa_emotions(user_id)
     new_val = max(0.0, min(100.0, value))
     with get_connection() as conn:
-        conn.execute("UPDATE alex_emotions SET fatigue = ?, last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (new_val, user_id))
+        conn.execute("UPDATE alisa_emotions SET fatigue = ?, last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (new_val, user_id))
         conn.commit()
 
 def update_last_interaction(user_id: int):
     # Обновляем timestamp как в глобальном ядре, так и в реляционной записи пользователя
     with get_connection() as conn:
         if not TESTING:
-            conn.execute("UPDATE alex_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (GLOBAL_ALEX_ID,))
-        conn.execute("UPDATE alex_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (user_id,))
+            conn.execute("UPDATE alisa_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (GLOBAL_ALISA_ID,))
+        conn.execute("UPDATE alisa_emotions SET last_interaction = CURRENT_TIMESTAMP WHERE user_id = ?", (user_id,))
         conn.commit()
 
-def add_alex_stm(user_id: int, role: str, content: str, emotional_charge: float = 0.0) -> int:
+def add_alisa_stm(user_id: int, role: str, content: str, emotional_charge: float = 0.0) -> int:
     with get_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO alex_stm (user_id, role, content, emotional_charge) VALUES (?, ?, ?, ?)",
+            "INSERT INTO alisa_stm (user_id, role, content, emotional_charge) VALUES (?, ?, ?, ?)",
             (user_id, role, content, emotional_charge)
         )
         conn.commit()
         return cursor.lastrowid
 
-def get_alex_stm(user_id: int, limit: int = 15) -> list:
+def get_alisa_stm(user_id: int, limit: int = 15) -> list:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT role, content FROM alex_stm WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            "SELECT role, content FROM alisa_stm WHERE user_id = ? ORDER BY id DESC LIMIT ?",
             (user_id, limit)
         )
         rows = cursor.fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
-def clear_alex_stm(user_id: int):
+def clear_alisa_stm(user_id: int):
     with get_connection() as conn:
-        conn.execute("DELETE FROM alex_stm WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM alisa_stm WHERE user_id = ?", (user_id,))
         conn.commit()
 
 def add_ltm_node(user_id: int, memory_text: str, embedding: str, memory_type: str, strength: float = 1.0, rigidity: float = 0.5, source: str = 'ego', verified: int = 1) -> int:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.execute(
-            """INSERT INTO alex_ltm_nodes (user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified)
+            """INSERT INTO alisa_ltm_nodes (user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified)
         )
@@ -570,58 +569,58 @@ def add_ltm_node(user_id: int, memory_text: str, embedding: str, memory_type: st
 
 def get_ltm_nodes_by_user(user_id: int) -> list[dict]:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified, recall_count, created_at FROM alex_ltm_nodes WHERE user_id = ?",
+            "SELECT id, user_id, memory_text, embedding, memory_type, strength, rigidity, source, verified, recall_count, created_at FROM alisa_ltm_nodes WHERE user_id = ?",
             (user_id,)
         )
         return [dict(row) for row in cursor.fetchall()]
 
 def update_ltm_node_verified(node_id: int, verified: int):
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_nodes SET verified = ? WHERE id = ?", (verified, node_id))
+        conn.execute("UPDATE alisa_ltm_nodes SET verified = ? WHERE id = ?", (verified, node_id))
         conn.commit()
 
 def update_ltm_node_strength(node_id: int, new_strength: float):
     new_strength = max(0.0, min(1.0, new_strength))
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_nodes SET strength = ? WHERE id = ?", (new_strength, node_id))
+        conn.execute("UPDATE alisa_ltm_nodes SET strength = ? WHERE id = ?", (new_strength, node_id))
         conn.commit()
 
 def increment_ltm_node_recall(node_id: int):
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_nodes SET recall_count = recall_count + 1 WHERE id = ?", (node_id,))
+        conn.execute("UPDATE alisa_ltm_nodes SET recall_count = recall_count + 1 WHERE id = ?", (node_id,))
         conn.commit()
 
 def update_ltm_node_rigidity(node_id: int, new_rigidity: float):
     new_rigidity = max(0.0, min(1.0, new_rigidity))
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_nodes SET rigidity = ? WHERE id = ?", (new_rigidity, node_id))
+        conn.execute("UPDATE alisa_ltm_nodes SET rigidity = ? WHERE id = ?", (new_rigidity, node_id))
         conn.commit()
 
 def update_ltm_node_text(node_id: int, new_text: str):
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_nodes SET memory_text = ? WHERE id = ?", (new_text, node_id))
+        conn.execute("UPDATE alisa_ltm_nodes SET memory_text = ? WHERE id = ?", (new_text, node_id))
         conn.commit()
 
 def update_ltm_node_embedding(node_id: int, new_embedding: str):
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_nodes SET embedding = ? WHERE id = ?", (new_embedding, node_id))
+        conn.execute("UPDATE alisa_ltm_nodes SET embedding = ? WHERE id = ?", (new_embedding, node_id))
         conn.commit()
 
 def delete_ltm_node(node_id: int):
     with get_connection() as conn:
-        conn.execute("DELETE FROM alex_ltm_nodes WHERE id = ?", (node_id,))
+        conn.execute("DELETE FROM alisa_ltm_nodes WHERE id = ?", (node_id,))
         conn.commit()
 
 def add_ltm_edge(user_id: int, source_id: int, target_id: int, weight: float = 0.5, association_type: str = 'semantic') -> int:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.execute(
-            """INSERT INTO alex_ltm_edges (user_id, source_id, target_id, weight, association_type)
+            """INSERT INTO alisa_ltm_edges (user_id, source_id, target_id, weight, association_type)
                VALUES (?, ?, ?, ?, ?)""",
             (user_id, source_id, target_id, weight, association_type)
         )
@@ -630,11 +629,11 @@ def add_ltm_edge(user_id: int, source_id: int, target_id: int, weight: float = 0
 
 def get_ltm_edges_by_user(user_id: int) -> list[dict]:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, user_id, source_id, target_id, weight, association_type, created_at FROM alex_ltm_edges WHERE user_id = ?",
+            "SELECT id, user_id, source_id, target_id, weight, association_type, created_at FROM alisa_ltm_edges WHERE user_id = ?",
             (user_id,)
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -642,29 +641,29 @@ def get_ltm_edges_by_user(user_id: int) -> list[dict]:
 def update_ltm_edge_weight(edge_id: int, new_weight: float):
     new_weight = max(0.0, min(1.0, new_weight))
     with get_connection() as conn:
-        conn.execute("UPDATE alex_ltm_edges SET weight = ? WHERE id = ?", (new_weight, edge_id))
+        conn.execute("UPDATE alisa_ltm_edges SET weight = ? WHERE id = ?", (new_weight, edge_id))
         conn.commit()
 
 def get_associated_edges_for_node(node_id: int) -> list[dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, user_id, source_id, target_id, weight, association_type, created_at FROM alex_ltm_edges WHERE source_id = ? OR target_id = ?",
+            "SELECT id, user_id, source_id, target_id, weight, association_type, created_at FROM alisa_ltm_edges WHERE source_id = ? OR target_id = ?",
             (node_id, node_id)
         )
         return [dict(row) for row in cursor.fetchall()]
 
 def delete_ltm_edge(edge_id: int):
     with get_connection() as conn:
-        conn.execute("DELETE FROM alex_ltm_edges WHERE id = ?", (edge_id,))
+        conn.execute("DELETE FROM alisa_ltm_edges WHERE id = ?", (edge_id,))
         conn.commit()
 
 def add_weak_flow_thought(user_id: int, thought: str) -> int:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO alex_weak_flow (user_id, thought) VALUES (?, ?)",
+            "INSERT INTO alisa_weak_flow (user_id, thought) VALUES (?, ?)",
             (user_id, thought)
         )
         conn.commit()
@@ -672,88 +671,88 @@ def add_weak_flow_thought(user_id: int, thought: str) -> int:
 
 def add_thought_history(user_id: int, thought: str, thought_type: str):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO alex_thought_history (user_id, thought, thought_type) VALUES (?, ?, ?)",
+            "INSERT INTO alisa_thought_history (user_id, thought, thought_type) VALUES (?, ?, ?)",
             (user_id, thought, thought_type)
         )
         conn.commit()
 
 def get_thought_history(user_id: int, limit: int = 10) -> list[dict]:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT thought, thought_type, created_at FROM alex_thought_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            "SELECT thought, thought_type, created_at FROM alisa_thought_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
             (user_id, limit)
         )
         return [dict(row) for row in cursor.fetchall()]
 
 def get_weak_flow_thoughts(user_id: int, limit: int = 5) -> list[str]:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT thought FROM alex_weak_flow WHERE user_id = ? ORDER BY id ASC LIMIT ?",
+            "SELECT thought FROM alisa_weak_flow WHERE user_id = ? ORDER BY id ASC LIMIT ?",
             (user_id, limit)
         )
         return [row["thought"] for row in cursor.fetchall()]
 
 def clear_weak_flow_thoughts(user_id: int):
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
-        conn.execute("DELETE FROM alex_weak_flow WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM alisa_weak_flow WHERE user_id = ?", (user_id,))
         conn.commit()
 
-def add_alex_hypothesis(user_id: int, hypothesis_text: str, confidence: float = 0.5) -> int:
+def add_alisa_hypothesis(user_id: int, hypothesis_text: str, confidence: float = 0.5) -> int:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO alex_hypotheses (user_id, hypothesis_text, confidence) VALUES (?, ?, ?)",
+            "INSERT INTO alisa_hypotheses (user_id, hypothesis_text, confidence) VALUES (?, ?, ?)",
             (user_id, hypothesis_text, confidence)
         )
         conn.commit()
         return cursor.lastrowid
 
-def get_alex_hypotheses(user_id: int, status: str = None) -> list[dict]:
+def get_alisa_hypotheses(user_id: int, status: str = None) -> list[dict]:
     if not TESTING:
-        user_id = GLOBAL_ALEX_ID
+        user_id = GLOBAL_ALISA_ID
     with get_connection() as conn:
         cursor = conn.cursor()
         if status:
             cursor.execute(
-                "SELECT id, user_id, hypothesis_text, confidence, status, created_at FROM alex_hypotheses WHERE user_id = ? AND status = ?",
+                "SELECT id, user_id, hypothesis_text, confidence, status, created_at FROM alisa_hypotheses WHERE user_id = ? AND status = ?",
                 (user_id, status)
             )
         else:
             cursor.execute(
-                "SELECT id, user_id, hypothesis_text, confidence, status, created_at FROM alex_hypotheses WHERE user_id = ?",
+                "SELECT id, user_id, hypothesis_text, confidence, status, created_at FROM alisa_hypotheses WHERE user_id = ?",
                 (user_id,)
             )
         return [dict(row) for row in cursor.fetchall()]
 
-def update_alex_hypothesis_status(hyp_id: int, status: str, confidence: float):
+def update_alisa_hypothesis_status(hyp_id: int, status: str, confidence: float):
     with get_connection() as conn:
         conn.execute(
-            "UPDATE alex_hypotheses SET status = ?, confidence = ? WHERE id = ?",
+            "UPDATE alisa_hypotheses SET status = ?, confidence = ? WHERE id = ?",
             (status, confidence, hyp_id)
         )
         conn.commit()
 
-def delete_alex_hypothesis(hyp_id: int):
+def delete_alisa_hypothesis(hyp_id: int):
     with get_connection() as conn:
-        conn.execute("DELETE FROM alex_hypotheses WHERE id = ?", (hyp_id,))
+        conn.execute("DELETE FROM alisa_hypotheses WHERE id = ?", (hyp_id,))
         conn.commit()
 
 def set_active_memory(user_id: int, key: str, val: str, confidence: float = 1.0):
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO alex_active_memory (user_id, key, val, confidence, updated_at)
+            """INSERT INTO alisa_active_memory (user_id, key, val, confidence, updated_at)
                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                ON CONFLICT(user_id, key) DO UPDATE SET
                val = excluded.val,
@@ -767,7 +766,7 @@ def get_active_memory(user_id: int) -> list[dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT key, val, confidence, created_at, updated_at FROM alex_active_memory WHERE user_id = ?",
+            "SELECT key, val, confidence, created_at, updated_at FROM alisa_active_memory WHERE user_id = ?",
             (user_id,)
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -775,7 +774,7 @@ def get_active_memory(user_id: int) -> list[dict]:
 def delete_active_memory(user_id: int, key: str):
     with get_connection() as conn:
         conn.execute(
-            "DELETE FROM alex_active_memory WHERE user_id = ? AND key = ?",
+            "DELETE FROM alisa_active_memory WHERE user_id = ? AND key = ?",
             (user_id, key)
         )
         conn.commit()
@@ -783,17 +782,17 @@ def delete_active_memory(user_id: int, key: str):
 def clear_active_memory(user_id: int):
     with get_connection() as conn:
         conn.execute(
-            "DELETE FROM alex_active_memory WHERE user_id = ?",
+            "DELETE FROM alisa_active_memory WHERE user_id = ?",
             (user_id,)
         )
         conn.commit()
 
-def save_alex_emotions(user_id: int, emotions: dict):
-    global_id = user_id if TESTING else GLOBAL_ALEX_ID
+def save_alisa_emotions(user_id: int, emotions: dict):
+    global_id = user_id if TESTING else GLOBAL_ALISA_ID
     with get_connection() as conn:
-        # Обновляем глобальное эмоциональное ядро Алекса
+        # Обновляем глобальное эмоциональное ядро Алисы
         conn.execute(
-            """UPDATE alex_emotions 
+            """UPDATE alisa_emotions
                SET dopamine = ?, serotonin = ?, acetylcholine = ?, gaba = ?, glutamate = ?, endorphins = ?, fatigue = ?
                WHERE user_id = ?""",
             (
@@ -810,7 +809,7 @@ def save_alex_emotions(user_id: int, emotions: dict):
         # Обновляем индивидуальные реляционные параметры для конкретного юзера
         if not TESTING:
             conn.execute(
-                """UPDATE alex_emotions 
+                """UPDATE alisa_emotions
                    SET oxytocin = ?, noradrenaline = ?
                    WHERE user_id = ?""",
                 (
@@ -841,7 +840,7 @@ def get_last_message_time(user_id: int) -> float:
             except Exception:
                 pass
         # Fallback to last_interaction in emotions
-        cursor.execute("SELECT last_interaction FROM alex_emotions WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT last_interaction FROM alisa_emotions WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         if row and row["last_interaction"]:
             try:

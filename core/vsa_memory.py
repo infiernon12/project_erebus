@@ -39,7 +39,7 @@ class VSAMemoryIndex:
             from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(
                 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
-                local_files_only=True
+                local_files_only=False
             )
             logger.info("SentenceTransformer model loaded successfully.")
         return self.model

@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 import re
 
-READING_DIR = os.path.join(os.path.dirname(__file__), "alex_reading")
+READING_DIR = os.path.join(os.path.dirname(__file__), "alisa_reading")
 os.makedirs(READING_DIR, exist_ok=True)
 
 # Curated daily digests and trivia in Russian for Filler Girl conversation topics

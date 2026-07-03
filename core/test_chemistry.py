@@ -21,8 +21,8 @@ class TestChemistrySampler(unittest.TestCase):
         # Top-P = 0.95 * (1.0 - 0.6 * 0.3) = 0.95 * 0.82 = 0.779
         self.assertAlmostEqual(params["top_p"], 0.779)
         
-        # RepPen = 1.1 + 0.3 * (0.5 - 0.0) = 1.25
-        self.assertAlmostEqual(params["repeat_penalty"], 1.25)
+        # RepPen = 1.1 + 0.3 * abs(0.5 - 0.5) = 1.1
+        self.assertAlmostEqual(params["repeat_penalty"], 1.1)
 
     def test_extreme_panic(self):
         emotions = {
@@ -58,8 +58,8 @@ class TestChemistrySampler(unittest.TestCase):
             "serotonin": 0.0
         }
         params_low = calculate_sampler_params(emotions_low)
-        # RepPen = 1.1 + 0.3 * (0.5 - 0.5) = 1.1
-        self.assertAlmostEqual(params_low["repeat_penalty"], 1.1)
+        # RepPen = 1.1 + 0.3 * abs(0.0 - 0.5) = 1.1 + 0.15 = 1.25
+        self.assertAlmostEqual(params_low["repeat_penalty"], 1.25)
 
         # High serotonin (extreme flat / looping)
         emotions_high = {
@@ -69,8 +69,8 @@ class TestChemistrySampler(unittest.TestCase):
             "serotonin": 1.0
         }
         params_high = calculate_sampler_params(emotions_high)
-        # RepPen = 1.1 + 0.3 * (0.5 - 0.5) = 1.1
-        self.assertAlmostEqual(params_high["repeat_penalty"], 1.1)
+        # RepPen = 1.1 + 0.3 * abs(1.0 - 0.5) = 1.1 + 0.15 = 1.25
+        self.assertAlmostEqual(params_high["repeat_penalty"], 1.25)
 
     def test_clamps(self):
         # Over the limit values

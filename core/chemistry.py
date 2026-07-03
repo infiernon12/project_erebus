@@ -11,7 +11,7 @@ def calculate_sampler_params(emotions: dict) -> dict:
     Translates Alex's 8-neurotransmitter chemical state into sampler parameters
     by delegating to prompts_experiment_chat.get_sampler_settings.
     """
-    from alex_vibe.prompts_experiment_chat import get_sampler_settings
+    from alisa_vibe.prompts_experiment_chat import get_sampler_settings
     params = get_sampler_settings(emotions)
     
     # Ensure both keys are present for compatibility

@@ -2,8 +2,8 @@ import unittest
 import asyncio
 import re
 import database as db
-import alex_vibe.alex_brain as alex_brain
-from alex_vibe.alex_brain import budget_context, process_and_filter_message
+import alisa_vibe.alisa_brain as alisa_brain
+from alisa_vibe.alisa_brain import budget_context, process_and_filter_message
 from bot import CognitionEngine
 
 class TestAlexCognitionCore(unittest.TestCase):
@@ -19,8 +19,8 @@ class TestAlexCognitionCore(unittest.TestCase):
         # Чистим тестовые данные
         with db.get_connection() as conn:
             conn.execute("DELETE FROM users WHERE user_id = ?", (self.test_user_id,))
-            conn.execute("DELETE FROM alex_emotions WHERE user_id = ?", (self.test_user_id,))
-            conn.execute("DELETE FROM alex_stm WHERE user_id = ?", (self.test_user_id,))
+            conn.execute("DELETE FROM alisa_emotions WHERE user_id = ?", (self.test_user_id,))
+            conn.execute("DELETE FROM alisa_stm WHERE user_id = ?", (self.test_user_id,))
         db.TESTING = False
 
     def test_cyrillic_token_budgeting(self):
@@ -52,21 +52,21 @@ class TestAlexCognitionCore(unittest.TestCase):
         db.register_user(user_b, "UserB", "Катя")
         
         # Инициализируем эмоции
-        emotions_a = db.get_alex_emotions(user_a)
-        emotions_b = db.get_alex_emotions(user_b)
+        emotions_a = db.get_alisa_emotions(user_a)
+        emotions_b = db.get_alisa_emotions(user_b)
         
         # Меняем окситоцин (отношение) индивидуально для User A
         emotions_a["oxytocin"] = 0.95
-        db.save_alex_emotions(user_a, emotions_a)
+        db.save_alisa_emotions(user_a, emotions_a)
         
         # Проверяем, что у User B окситоцин остался дефолтным (0.40) и не изменился из-за активности User A
-        fresh_b = db.get_alex_emotions(user_b)
+        fresh_b = db.get_alisa_emotions(user_b)
         self.assertEqual(fresh_b["oxytocin"], 0.40)
         
         # Чистим за собой
         with db.get_connection() as conn:
             conn.execute("DELETE FROM users WHERE user_id IN (?, ?)", (user_a, user_b))
-            conn.execute("DELETE FROM alex_emotions WHERE user_id IN (?, ?)", (user_a, user_b))
+            conn.execute("DELETE FROM alisa_emotions WHERE user_id IN (?, ?)", (user_a, user_b))
 
     def test_scaled_emotions_decay(self):
         """Тест 3: Проверка плавного затухания эмоций социального голода пропорционально длине тика"""

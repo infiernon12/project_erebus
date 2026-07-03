@@ -1,4 +1,4 @@
-# File: alex_vibe/verify_alex_graph.py
+# File: alisa_vibe/verify_alex_graph.py
 # Project: AIshnitza (Alex Consciousness Isolation)
 # Type: Python Executable
 
@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database as db
 db.TESTING = True
-import alex_vibe.alex_brain as alex_brain
+import alisa_vibe.alisa_brain as alisa_brain
 
 # Global test variables
 USER_ID = 999999
@@ -25,8 +25,8 @@ NODE3_ID = None
 captured_system_instructions = []
 
 # Mock the Groq client to make tests fast, deterministic, and network-independent
-alex_brain.groq_client = MagicMock()
-alex_brain.generate_embedding = lambda text: alex_brain.get_local_embedding(text)
+alisa_brain.groq_client = MagicMock()
+alisa_brain.generate_embedding = lambda text: alisa_brain.get_local_embedding(text)
 
 def mock_create(*args, **kwargs):
     global captured_system_instructions
@@ -81,7 +81,7 @@ def mock_create(*args, **kwargs):
     mock_response.choices = [mock_choice]
     return mock_response
 
-alex_brain.groq_client.chat.completions.create = mock_create
+alisa_brain.groq_client.chat.completions.create = mock_create
 
 async def run_tests():
     global NODE1_ID, NODE2_ID, NODE3_ID
@@ -92,10 +92,10 @@ async def run_tests():
     
     # Discard previous test states for the test user
     with db.get_connection() as conn:
-        conn.execute("DELETE FROM alex_emotions WHERE user_id = ?", (USER_ID,))
-        conn.execute("DELETE FROM alex_stm WHERE user_id = ?", (USER_ID,))
-        conn.execute("DELETE FROM alex_ltm_nodes WHERE user_id = ?", (USER_ID,))
-        conn.execute("DELETE FROM alex_ltm_edges WHERE user_id = ?", (USER_ID,))
+        conn.execute("DELETE FROM alisa_emotions WHERE user_id = ?", (USER_ID,))
+        conn.execute("DELETE FROM alisa_stm WHERE user_id = ?", (USER_ID,))
+        conn.execute("DELETE FROM alisa_ltm_nodes WHERE user_id = ?", (USER_ID,))
+        conn.execute("DELETE FROM alisa_ltm_edges WHERE user_id = ?", (USER_ID,))
         conn.commit()
         
     db.register_user(USER_ID, "test_ruslan")
@@ -108,10 +108,10 @@ async def run_tests():
     print("\n[TEST 1] Verifying SQLite Tables Creation...")
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alex_ltm_nodes'")
-        assert cursor.fetchone() is not None, "alex_ltm_nodes table does not exist!"
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alex_ltm_edges'")
-        assert cursor.fetchone() is not None, "alex_ltm_edges table does not exist!"
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alisa_ltm_nodes'")
+        assert cursor.fetchone() is not None, "alisa_ltm_nodes table does not exist!"
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alisa_ltm_edges'")
+        assert cursor.fetchone() is not None, "alisa_ltm_edges table does not exist!"
     print("✅ TEST 1 PASSED: Graph tables exist in SQLite.")
 
     # ----------------------------------------------------
@@ -120,7 +120,7 @@ async def run_tests():
     print("\n[TEST 2] Verifying Memory Retrieval Plasticity & Reconsolidation...")
     
     # Seed nodes
-    emb_estonia = alex_brain.generate_embedding("Эстония")
+    emb_estonia = alisa_brain.generate_embedding("Эстония")
     NODE1_ID = db.add_ltm_node(
         user_id=USER_ID,
         memory_text="Я живу в Эстонии.",
@@ -129,7 +129,7 @@ async def run_tests():
         strength=0.5
     )
     
-    emb_friend = alex_brain.generate_embedding("Руслан")
+    emb_friend = alisa_brain.generate_embedding("Руслан")
     NODE2_ID = db.add_ltm_node(
         user_id=USER_ID,
         memory_text="Руслан — мой близкий друг.",
@@ -148,7 +148,7 @@ async def run_tests():
     )
     
     # Perform retrieval matching "Эстония"
-    retrieved = alex_brain.retrieve_memories(USER_ID, "Эстония", limit=1)
+    retrieved = alisa_brain.retrieve_memories(USER_ID, "Эстония", limit=1)
     assert len(retrieved) > 0, "Failed to retrieve memory!"
     
     # Assert reconconsolidation text is returned
@@ -167,7 +167,7 @@ async def run_tests():
     assert abs(edge1["weight"] - 0.85) < 0.001, f"Expected edge weight 0.85, got {edge1['weight']}"
     
     # Clamping test: retrieve again to check clamp to 1.0
-    retrieved2 = alex_brain.retrieve_memories(USER_ID, "Эстония", limit=1)
+    retrieved2 = alisa_brain.retrieve_memories(USER_ID, "Эстония", limit=1)
     nodes = db.get_ltm_nodes_by_user(USER_ID)
     node1_again = next(n for n in nodes if n["id"] == NODE1_ID)
     assert node1_again["strength"] == 1.0, f"Expected clamped strength 1.0, got {node1_again['strength']}"
@@ -184,15 +184,15 @@ async def run_tests():
     print("\n[TEST 3] Verifying Async Sleep Cycle stages...")
     
     # Add STM logs to consolidate
-    db.add_alex_stm(USER_ID, "user", "Я живу в Эстонии. Сын Маркус ходит в школу.", emotional_charge=0.8)
+    db.add_alisa_stm(USER_ID, "user", "Я живу в Эстонии. Сын Маркус ходит в школу.", emotional_charge=0.8)
     
     # Reset fatigue to 100 to trigger sleep cycle test
     with db.get_connection() as conn:
-        conn.execute("UPDATE alex_emotions SET fatigue = 100.0 WHERE user_id = ?", (USER_ID,))
+        conn.execute("UPDATE alisa_emotions SET fatigue = 100.0 WHERE user_id = ?", (USER_ID,))
         conn.commit()
         
     # Trigger sleep cycle asynchronously and wait for it
-    task = asyncio.create_task(alex_brain.trigger_sleep_cycle(USER_ID))
+    task = asyncio.create_task(alisa_brain.trigger_sleep_cycle(USER_ID))
     print("Async sleep task created...")
     await task
     print("Async sleep task finished.")
@@ -227,8 +227,8 @@ async def run_tests():
     )
     
     # Clear STM to only decay
-    db.clear_alex_stm(USER_ID)
-    await alex_brain.trigger_sleep_cycle(USER_ID)
+    db.clear_alisa_stm(USER_ID)
+    await alisa_brain.trigger_sleep_cycle(USER_ID)
     
     # Verify weak node and edge are gone
     nodes_after_decay = db.get_ltm_nodes_by_user(USER_ID)
@@ -245,7 +245,7 @@ async def run_tests():
     print("\n[TEST 4] Verifying Memory Generalization / Clustering...")
     
     # Seed duplicate/highly similar nodes (using identical embeddings to guarantee sim = 1.0)
-    emb_python = alex_brain.generate_embedding("Python")
+    emb_python = alisa_brain.generate_embedding("Python")
     NODE3_ID = db.add_ltm_node(
         user_id=USER_ID,
         memory_text="Я обучаю Python.",
@@ -272,7 +272,7 @@ async def run_tests():
     )
     
     # Run clustering
-    alex_brain.perform_semantic_clustering(USER_ID)
+    alisa_brain.perform_semantic_clustering(USER_ID)
     
     # Assert duplicate nodes are deleted
     nodes_post_cluster = db.get_ltm_nodes_by_user(USER_ID)
@@ -316,7 +316,7 @@ async def run_tests():
     )
     
     # Run clustering again
-    alex_brain.perform_semantic_clustering(USER_ID)
+    alisa_brain.perform_semantic_clustering(USER_ID)
     
     # Since tmp_node1 and tmp_node2 are merged to the same consolidated node, the loop_edge_id must be deleted
     edges_post_second_cluster = db.get_ltm_edges_by_user(USER_ID)
@@ -328,12 +328,12 @@ async def run_tests():
     print("\n[TEST 5] Verifying ROM identity constants and single-use Dream Residual...")
     
     # 1. Test that last_dream is set and retrieved
-    db.set_alex_last_dream(USER_ID, "Мне снились бесконечные строки кода и холодный ветер.")
-    emotions = db.get_alex_emotions(USER_ID)
+    db.set_alisa_last_dream(USER_ID, "Мне снились бесконечные строки кода и холодный ветер.")
+    emotions = db.get_alisa_emotions(USER_ID)
     assert emotions["last_dream"] == "Мне снились бесконечные строки кода и холодный ветер.", "Failed to save last_dream to DB!"
     
     # 2. Test generate_felt_sense uses last_dream and clears it
-    felt_sense = alex_brain.generate_felt_sense(
+    felt_sense = alisa_brain.generate_felt_sense(
         user_id=USER_ID,
         emotions=emotions,
         retrieved_memories=["Я помню, что я оцифрованное сознание."],
@@ -344,7 +344,7 @@ async def run_tests():
     print(f"Generated Felt Sense with Dream Residual:\n{felt_sense}")
     
     # Check that last_dream is cleared in the DB
-    emotions_after = db.get_alex_emotions(USER_ID)
+    emotions_after = db.get_alisa_emotions(USER_ID)
     assert emotions_after["last_dream"] is None, "last_dream was not cleared after generate_felt_sense!"
     
     print("✅ TEST 5 PASSED: ROM identity constants and single-use Dream Residual verified successfully.")
@@ -362,8 +362,8 @@ async def run_tests():
     assert weak_thoughts[0] == "Я чувствую смутное присутствие.", "Wrong order or content of weak thoughts!"
     
     # 2. Test felt sense integration and cleanup of weak thoughts
-    emotions_weak = db.get_alex_emotions(USER_ID)
-    felt_sense_weak = alex_brain.generate_felt_sense(
+    emotions_weak = db.get_alisa_emotions(USER_ID)
+    felt_sense_weak = alisa_brain.generate_felt_sense(
         user_id=USER_ID,
         emotions=emotions_weak,
         retrieved_memories=[],
@@ -377,7 +377,7 @@ async def run_tests():
     assert len(weak_thoughts_after) == 0, "Weak thoughts were not cleared after generate_felt_sense!"
     
     # 3. Test autonomous search and LTM consolidation
-    search_summary = alex_brain.perform_autonomous_search(USER_ID, "python programming language")
+    search_summary = alisa_brain.perform_autonomous_search(USER_ID, "python programming language")
     assert len(search_summary) > 0, "Autonomous search summary is empty!"
     print(f"Autonomous search summary:\n{search_summary}")
     
@@ -388,12 +388,12 @@ async def run_tests():
     print(f"Consolidated LTM search node: {search_node[0]['memory_text']}")
     
     # 4. Test generate_weak_thought with search triggered
-    alex_brain.last_search_time[USER_ID] = datetime(2000, 1, 1) # old time
+    alisa_brain.last_search_time[USER_ID] = datetime(2000, 1, 1) # old time
     with db.get_connection() as conn:
-        conn.execute("UPDATE alex_emotions SET dopamine = 0.9 WHERE user_id = ?", (USER_ID,))
+        conn.execute("UPDATE alisa_emotions SET dopamine = 0.9 WHERE user_id = ?", (USER_ID,))
         conn.commit()
     
-    weak_thought_result = alex_brain.generate_weak_thought(USER_ID)
+    weak_thought_result = alisa_brain.generate_weak_thought(USER_ID)
     assert len(weak_thought_result) > 0, "Weak thought generation failed!"
     print(f"Weak thought result: {weak_thought_result}")
     
@@ -405,7 +405,7 @@ async def run_tests():
     print("\n[TEST 7] Verifying Immutable Memory, Web Decay, and Leave/Return neuro-loop...")
     
     # 1. Verify Immutable memory doesn't overwrite DB text
-    emb_bio = alex_brain.generate_embedding("Я родился в Минске.")
+    emb_bio = alisa_brain.generate_embedding("Я родился в Минске.")
     bio_node_id = db.add_ltm_node(
         user_id=USER_ID,
         memory_text="Я родился в Минске.",
@@ -413,7 +413,7 @@ async def run_tests():
         memory_type="biographical",
         strength=0.8
     )
-    retrieved_bio = alex_brain.retrieve_memories(USER_ID, "родился в Минске", limit=1)
+    retrieved_bio = alisa_brain.retrieve_memories(USER_ID, "родился в Минске", limit=1)
     nodes_post_bio = db.get_ltm_nodes_by_user(USER_ID)
     bio_node = next(n for n in nodes_post_bio if n["id"] == bio_node_id)
     assert bio_node["memory_text"] == "Я родился в Минске.", f"Immutable biographical node text was changed: {bio_node['memory_text']}"
@@ -429,8 +429,8 @@ async def run_tests():
         source="web",
         verified=0
     )
-    db.clear_alex_stm(USER_ID)
-    await alex_brain.trigger_sleep_cycle(USER_ID)
+    db.clear_alisa_stm(USER_ID)
+    await alisa_brain.trigger_sleep_cycle(USER_ID)
     nodes_post_web_sleep = db.get_ltm_nodes_by_user(USER_ID)
     web_node = next(n for n in nodes_post_web_sleep if n["id"] == web_node_id)
     assert abs(web_node["strength"] - 0.72) < 0.001, f"Expected unverified decay strength 0.72, got {web_node['strength']}"
@@ -440,10 +440,10 @@ async def run_tests():
     # Set expected return to 1 hour ago (late return)
     from datetime import timedelta
     late_time = (datetime.now() - timedelta(hours=1.0)).strftime("%Y-%m-%d %H:%M:%S")
-    db.update_alex_leave_status(USER_ID, late_time, "work")
+    db.update_alisa_leave_status(USER_ID, late_time, "work")
     
-    emotions_before_return = db.get_alex_emotions(USER_ID)
-    emotions_after_return = alex_brain.process_user_return(USER_ID, emotions_before_return)
+    emotions_before_return = db.get_alisa_emotions(USER_ID)
+    emotions_after_return = alisa_brain.process_user_return(USER_ID, emotions_before_return)
     assert emotions_after_return["expected_return"] is None, "Leave status not cleared after return!"
     assert emotions_after_return["oxytocin"] < emotions_before_return["oxytocin"], "Oxytocin did not decrease upon late return!"
     print("  - Leave/Return neurochemical response verified.")
@@ -451,10 +451,10 @@ async def run_tests():
     # 4. Verify Amygdala Preprocessor (perception bias under high noradrenaline)
     # Set noradrenaline high in DB
     with db.get_connection() as conn:
-        conn.execute("UPDATE alex_emotions SET noradrenaline = 0.90 WHERE user_id = ?", (USER_ID,))
+        conn.execute("UPDATE alisa_emotions SET noradrenaline = 0.90 WHERE user_id = ?", (USER_ID,))
         conn.commit()
     captured_system_instructions.clear()
-    alex_brain.evaluate_subconscious(USER_ID, "Привет")
+    alisa_brain.evaluate_subconscious(USER_ID, "Привет")
     assert any("[СУБЪЕКТИВНЫЙ ФИЛЬТР ВОСПРИЯТИЯ: ТРЕВОГА И УЯЗВИМОСТЬ]" in inst for inst in captured_system_instructions), "Amygdala bias prompt not found in system instructions!"
     print("  - Amygdala preprocessor prompt bias verified.")
     
