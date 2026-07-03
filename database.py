@@ -313,6 +313,115 @@ def get_alex_emotions(user_id: int) -> dict:
     merged["last_interaction"] = relational_emotions["last_interaction"]
     return merged
 
+def get_alex_emotions_batch(user_ids: list[int]) -> dict:
+    """
+    Optimized batch fetch of alex emotions for multiple users.
+    Returns a dict mapping user_id -> emotions_dict.
+    """
+    if not user_ids:
+        return {}
+
+    needed_ids = set(user_ids)
+    if not TESTING:
+        needed_ids.add(GLOBAL_ALEX_ID)
+
+    needed_list = list(needed_ids)
+    raw_emotions = {}
+
+    with get_connection() as conn:
+        def get_rows(ids):
+            placeholders = ",".join("?" for _ in ids)
+            query = f"""SELECT user_id, dopamine, serotonin, noradrenaline, acetylcholine, gaba, oxytocin, glutamate, endorphins, fatigue,
+                          base_dopamine, base_serotonin, base_noradrenaline, base_acetylcholine, base_gaba, base_oxytocin, base_glutamate, base_endorphins,
+                          last_interaction, last_dream, dominant_focus, dominant_strength, expected_return, leave_reason
+                   FROM alex_emotions WHERE user_id IN ({placeholders})"""
+            return conn.execute(query, ids).fetchall()
+
+        rows = []
+        for i in range(0, len(needed_list), 900):
+            rows.extend(get_rows(needed_list[i:i+900]))
+
+        for row in rows:
+            raw_emotions[row[0]] = {
+                "dopamine": row[1],
+                "serotonin": row[2],
+                "noradrenaline": row[3],
+                "acetylcholine": row[4],
+                "gaba": row[5],
+                "oxytocin": row[6],
+                "glutamate": row[7],
+                "endorphins": row[8],
+                "fatigue": row[9],
+                "base_dopamine": row[10],
+                "base_serotonin": row[11],
+                "base_noradrenaline": row[12],
+                "base_acetylcholine": row[13],
+                "base_gaba": row[14],
+                "base_oxytocin": row[15],
+                "base_glutamate": row[16],
+                "base_endorphins": row[17],
+                "last_interaction": row[18],
+                "last_dream": row[19],
+                "dominant_focus": row[20],
+                "dominant_strength": row[21],
+                "expected_return": row[22],
+                "leave_reason": row[23]
+            }
+
+        missing_ids = [uid for uid in needed_list if uid not in raw_emotions]
+        if missing_ids:
+            insert_query = """INSERT INTO alex_emotions
+                   (user_id, dopamine, serotonin, noradrenaline, acetylcholine, gaba, oxytocin, glutamate, endorphins, fatigue,
+                    base_dopamine, base_serotonin, base_noradrenaline, base_acetylcholine, base_gaba, base_oxytocin, base_glutamate, base_endorphins)
+                   VALUES (?, 0.5, 0.5, 0.4, 0.6, 0.5, 0.4, 0.5, 0.3, 0.0, 0.5, 0.5, 0.3, 0.5, 0.5, 0.3, 0.4, 0.15)"""
+            conn.executemany(insert_query, [(uid,) for uid in missing_ids])
+            conn.commit()
+
+            for uid in missing_ids:
+                raw_emotions[uid] = {
+                    "dopamine": 0.5,
+                    "serotonin": 0.5,
+                    "noradrenaline": 0.4,
+                    "acetylcholine": 0.6,
+                    "gaba": 0.5,
+                    "oxytocin": 0.4,
+                    "glutamate": 0.5,
+                    "endorphins": 0.3,
+                    "fatigue": 0.0,
+                    "base_dopamine": 0.5,
+                    "base_serotonin": 0.5,
+                    "base_noradrenaline": 0.3,
+                    "base_acetylcholine": 0.5,
+                    "base_gaba": 0.5,
+                    "base_oxytocin": 0.3,
+                    "base_glutamate": 0.4,
+                    "base_endorphins": 0.15,
+                    "last_interaction": None,
+                    "last_dream": None,
+                    "dominant_focus": None,
+                    "dominant_strength": 0.0,
+                    "expected_return": None,
+                    "leave_reason": None
+                }
+
+    global_emotions = raw_emotions.get(GLOBAL_ALEX_ID) if not TESTING else None
+
+    result = {}
+    for uid in user_ids:
+        if TESTING or uid == GLOBAL_ALEX_ID:
+            result[uid] = raw_emotions[uid]
+        else:
+            relational = raw_emotions[uid]
+            merged = dict(global_emotions)
+            merged["oxytocin"] = relational["oxytocin"]
+            merged["noradrenaline"] = relational["noradrenaline"]
+            merged["base_oxytocin"] = relational["base_oxytocin"]
+            merged["base_noradrenaline"] = relational["base_noradrenaline"]
+            merged["last_interaction"] = relational["last_interaction"]
+            result[uid] = merged
+
+    return result
+
 def update_alex_leave_status(user_id: int, expected_return: str, leave_reason: str):
     if not TESTING:
         user_id = GLOBAL_ALEX_ID
