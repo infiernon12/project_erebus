@@ -470,10 +470,11 @@ async def callback_alex_cmd_export_all(callback: CallbackQuery):
         # Fetch short term memory (all users STM for full audit)
         all_users = db.get_all_users()
         stms = {}
+        all_stms = db.get_all_users_stm(limit=200)
         for u in all_users:
             uid = u["user_id"]
             u_name = u["opponent_name"] or u["username"] or str(uid)
-            stms[u_name] = db.get_alex_stm(uid, limit=200)
+            stms[u_name] = all_stms.get(uid, [])
             
 
         # Fetch thoughts

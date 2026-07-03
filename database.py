@@ -574,6 +574,37 @@ def get_alex_stm(user_id: int, limit: int = 15) -> list:
         rows = cursor.fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
+def get_all_users_stm(limit: int = 200) -> dict:
+    """
+    Fetch STMs for all users up to a certain limit per user.
+    Returns a dict mapping user_id -> list of STM dicts [{"role": ..., "content": ...}]
+    The list is ordered chronologically (oldest first) just like get_alex_stm.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Use window function to limit rows per user
+        cursor.execute("""
+            SELECT user_id, role, content
+            FROM (
+                SELECT user_id, role, content,
+                       ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY id DESC) as rn
+                FROM alex_stm
+            )
+            WHERE rn <= ?
+            ORDER BY user_id, rn DESC
+        """, (limit,))
+
+        rows = cursor.fetchall()
+
+        result = {}
+        for r in rows:
+            uid = r["user_id"]
+            if uid not in result:
+                result[uid] = []
+            result[uid].append({"role": r["role"], "content": r["content"]})
+
+        return result
+
 def clear_alex_stm(user_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM alex_stm WHERE user_id = ?", (user_id,))
