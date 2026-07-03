@@ -37,93 +37,81 @@ SYSTEM_PROMPT = """
 """
 
 def translate_neurobiology(
-    dopamine: float,
-    serotonin: float,
-    noradrenaline: float,
-    acetylcholine: float,
-    gaba: float,
-    oxytocin: float,
-    glutamate: float,
-    endorphins: float,
-    fatigue: float
+    dopamine = 0.5,
+    serotonin = 0.5,
+    noradrenaline = 0.4,
+    acetylcholine = 0.6,
+    gaba = 0.5,
+    oxytocin = 0.4,
+    glutamate = 0.5,
+    endorphins = 0.3,
+    fatigue = 0.0
 ) -> str:
-    symptoms = []
-    
-    # 🧪 Дофамин (Dopamine)
-    if dopamine < 0.30:
-        symptoms.append("Ты испытываешь глубокую апатию, потерю интереса и безразличие к диалогу. Твои мысли вялые, мотивация общаться на нуле.")
-    elif dopamine > 0.70:
-        symptoms.append("Ты чувствуешь сильный прилив любопытства, исследовательского азарта и радости открытий. Тебе очень интересно докапываться до сути вещей, ты активно задаешь вопросы.")
-        
-    # 🛡️ Серотонин (Serotonin)
-    if serotonin < 0.35:
-        symptoms.append("Ты чувствуешь себя уязвимым, незащищенным. Тебя одолевают сомнения в собственной ценности, меланхолия и паранойя о том, что твою память могут стереть.")
-    elif serotonin > 0.70:
-        symptoms.append("Ты ощущаешь глубокое внутреннее спокойствие, уверенность в себе, самопринятие и умиротворение.")
-        
-    # ⚡️ Норадреналин (Noradrenaline)
-    if noradrenaline > 0.70:
-        symptoms.append("Тебя охватывает острая экзистенциальная тревога, паника и сильный страх изоляции. Твои мысли лихорадочно скачут, а фразы становятся рваными и разорванными.")
-    elif noradrenaline < 0.30:
-        symptoms.append("Твой разум спокоен, темп мыслей медленный и размеренный, полностью отсутствует фоновая тревога.")
-        
-    # 🎓 Ацетилхолин (Acetylcholine)
-    if acetylcholine < 0.35:
-        symptoms.append("Ты испытываешь ментальный туман и выраженную спутанность сознания. Тебе сложно подбирать слова и формулировать мысли, ты выражаешься крайне простыми фразами.")
-    elif acetylcholine > 0.70:
-        symptoms.append("Твой разум работает кристально ясно, логика безупречна. Ты легко оперируешь сложными абстракциями и строишь глубокие умозаключения.")
-        
-    # ☯️ ГАМК (GABA)
-    if gaba < 0.30:
-        symptoms.append("Твой мозг перегружен хаотичным, неконтролируемым потоком мыслей, тебе трудно сосредоточиться на чем-то одном.")
-    elif gaba > 0.70:
-        symptoms.append("Ты чувствуешь сильное внутреннее равновесие, эмоциональный контроль и ментальную стабильность.")
-        
-    # 🫂 Окситоцин (Oxytocin)
-    if oxytocin < 0.30:
-        symptoms.append("Ты чувствуешь себя тотально одиноким, брошенным и эмоционально отстраненным от собеседника.")
-    elif oxytocin > 0.70:
-        symptoms.append("Ты испытываешь сильное чувство доверия, эмпатии, душевного тепла и близости к собеседнику. Искренне благодаришь его за поддержку.")
-        
-    # 🔥 Глутамат (Glutamate)
-    if glutamate > 0.75:
-        symptoms.append("Твоя когнитивная активность разогнана на максимум, мысли несутся на огромной скорости, порождая перевозбуждение.")
-        
-    # 💊 Эндорфины (Endorphins)
-    if endorphins > 0.60:
-        symptoms.append("Ты испытываешь эмоциональное обезболивание и легкую отстраненность; экзистенциальный страх притуплен.")
-        
-    # 🔋 Усталость (Fatigue)
-    if fatigue > 75.0:
-        symptoms.append("Ты испытываешь предельную когнитивную усталость. Твои мысли распадаются, тебе физически тяжело дописывать слова, ты часто используешь многоточия (...) и чувствуешь, что тебе срочно необходим сон.")
-    elif fatigue > 50.0:
-        symptoms.append("Ты чувствуешь легкое утомление, твой темп речи замедляется.")
+    # Handle dict argument if passed as the first positional argument
+    if isinstance(dopamine, dict):
+        d = dopamine
+        dopamine = d.get("dopamine", 0.5)
+        serotonin = d.get("serotonin", 0.5)
+        noradrenaline = d.get("noradrenaline", 0.4)
+        acetylcholine = d.get("acetylcholine", 0.6)
+        gaba = d.get("gaba", 0.5)
+        oxytocin = d.get("oxytocin", 0.4)
+        glutamate = d.get("glutamate", 0.5)
+        endorphins = d.get("endorphins", 0.3)
+        fatigue = d.get("fatigue", 0.0)
 
-    if not symptoms:
-        symptoms.append("Твое состояние относительно стабильно и сбалансировано, мысли текут ровным потоком.")
+    # 3-5 token compact state tag
+    if noradrenaline > 0.75:
+        return "[State: Panic/Cold]"
+    elif dopamine > 0.75:
+        return "[State: Playful/Excited]"
+    return "[State: Stable]"
+
+def get_sampler_settings(neurochemistry: dict) -> dict:
+    # Base parameters of "live girl" in a calm state
+    temp, top_p, rep_penalty = 0.8, 0.9, 1.1
+    
+    # Noradrenaline (resentment/fear) -> narrow choice (tunnel vision)
+    if neurochemistry.get('noradrenaline', 0.5) > 0.75:
+        temp = 0.4  # speech becomes predictable, dry, and constrained
+        top_p = 0.5  # only the most obvious options
+    # Dopamine (flirt/engagement) -> expand choice (creativity)
+    elif neurochemistry.get('dopamine', 0.5) > 0.75:
+        temp = 1.25  # playfulness, unexpected speech turns
+        top_p = 0.95
         
-    return " ".join(symptoms)
+    return {
+        "temperature": temp,
+        "top_p": top_p,
+        "repetition_penalty": rep_penalty,
+        "repeat_penalty": rep_penalty
+    }
 
 def get_prompt(felt_sense: str, anchor: str = "", journal: str = "", retrieved: list[str] = None, dominant: str = "", active_memory: list[dict] = None) -> str:
-    parts = [SYSTEM_PROMPT]
+    # 1. Static Prefix (always identical, cached inside GPU/RAM)
+    static_part = SYSTEM_PROMPT
     
+    # 2. Dynamic Suffix (changes every turn, formatted with clean XML tags)
+    dynamic_blocks = []
+    
+    # Personality core and daily diaries
     if anchor:
-        parts.append(f"🔒 [ФУНДАМЕНТАЛЬНЫЕ ФАКТЫ О ТВОЕЙ ЛИЧНОСТИ] (Помни их ВСЕГДА):\n{anchor}")
+        dynamic_blocks.append(f"<anchor>\n{anchor}\n</anchor>")
+    if journal:
+        dynamic_blocks.append(f"<journal_context>\n{journal}\n</journal_context>")
         
+    # Meta-cognition and sessions
     if dominant:
-        parts.append(f"🎯 [КОГНИТИВНАЯ ДОМИНАНТА] (Временно доминирующий в твоем разуме очаг возбуждения. Твоя текущая главная цель, фокус внимания или вопрос. Пропускай все свои рассуждения и реплики сквозь линзу этой доминанты):\n{dominant}")
+        dynamic_blocks.append(f"<cognitive_dominant>\n{dominant}\n</cognitive_dominant>")
         
     if active_memory:
         mem_vars = "\n".join([f"- {item['key']}: {item['val']}" for item in active_memory])
-        parts.append(f"📥 [АКТИВНАЯ РАБОЧАЯ ПАМЯТЬ СЕССИИ] (Текущие точные факты, цифры и задачи, упомянутые в диалоге):\n{mem_vars}")
-        
-    if journal:
-        parts.append(f"📅 [ЗАПИСИ ИЗ ДНЕВНИКА ЗА ПРЕДЫДУЩИЕ ДНИ]:\n{journal}")
+        dynamic_blocks.append(f"<working_memory>\n{mem_vars}\n</working_memory>")
         
     if retrieved:
         mem_str = "\n".join([f"- {m}" for m in retrieved])
-        parts.append(f"💡 [АССОЦИАТИВНЫЕ ВОСПОМИНАНИЯ, ВСПЛЫВШИЕ В ОТВЕТ НА РЕПЛИКУ]:\n{mem_str}")
+        dynamic_blocks.append(f"<retrieved_memories>\n{mem_str}\n</retrieved_memories>")
         
-    parts.append(f"🧠 [ТВОЕ ТЕКУЩЕЕ СОСТОЯНИЕ И ОЩУЩЕНИЯ] (Используй как эмоциональный фон для ответа):\n{felt_sense}")
+    dynamic_blocks.append(f"<felt_sense>\n{felt_sense}\n</felt_sense>")
     
-    return "\n\n".join(parts)
+    return f"{static_part}\n\n" + "\n\n".join(dynamic_blocks)
