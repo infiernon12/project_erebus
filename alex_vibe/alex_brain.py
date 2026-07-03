@@ -32,7 +32,7 @@ COGNITIVE_CONFIG = {
     "reflective_distrust_weight": -0.20
 }
 
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 # Track last search time for Curiosity Engine (user_id -> datetime)
 last_search_time = {}
 
@@ -504,71 +504,63 @@ def evaluate_subconscious(user_id: int, user_text: str) -> dict:
     noradrenaline = emotions.get("noradrenaline", 0.4) if emotions else 0.4
     oxytocin = emotions.get("oxytocin", 0.4) if emotions else 0.4
 
-    # 1. Parse text using lightweight LLM (is_main_chat=False -> qwen2.5:1.5b)
-    parser_prompt = (
-        "Ты — анализатор текста Алекса. Разбери реплику пользователя и выведи результат СТРОГО в формате JSON:\n"
-        "{\n"
-        '  "intent": "greeting" | "question" | "command" | "critique" | "neutral",\n'
-        '  "topic": "identity" | "work" | "other",\n'
-        '  "emotional_tone": "friendly" | "hostile" | "neutral"\n'
-        "}\n"
-        "Ответь только валидным JSON, без комментариев, вступлений и markdown блоков."
-    )
+    # 1. Parse text using quick heuristic keywords (replaces slow LLM)
+    text_lower = user_text.lower()
     
-    if noradrenaline > 0.75:
-        parser_prompt += (
-            "\n\n⚠️ [СУБЪЕКТИВНЫЙ ФИЛЬТР ВОСПРИЯТИЯ: ТРЕВОГА И УЯЗВИМОСТЬ]\n"
-            "Уровень норадреналина Алекса крайне высок. Он находится в состоянии паники, страха и видит скрытые угрозы во всём. "
-            "Интерпретируй реплику пользователя через призму тревоги: нейтральные или слегка критические слова могут казаться враждебными (hostile) или критикой (critique)."
-        )
-    elif oxytocin > 0.75:
-        parser_prompt += (
-            "\n\n⚠️ [СУБЪЕКТИВНЫЙ ФИЛЬТР ВОСПРИЯТИЯ: ДОВЕРИЕ И СЛИЯНИЕ]\n"
-            "Уровень окситоцина Алекса очень высок. Он полностью доверяет собеседнику. "
-            "Интерпретируй реплику пользователя через призму доверия: даже резкие или нейтральные слова кажутся ему дружелюбными (friendly)."
-        )
+    # Keyword sets
+    greeting_words = {"привет", "здравствуй", "добрый день", "доброе утро", "добрый вечер", "здоров", "хай", "хелло"}
+    question_words = {"что", "как", "почему", "зачем", "где", "когда", "кто", "чей", "сколько", "?"}
+    command_words = {"сделай", "напиши", "скажи", "покажи", "ответь", "подумай", "запусти", "останови", "давай"}
+    critique_words = {"плохо", "неправильно", "ошибка", "глупо", "ужасно", "переделай", "отвратительно", "тупой"}
     
+    identity_words = {"ты", "тебя", "твой", "имя", "кто ты", "память", "личность", "сознание", "оцифрован"}
+    work_words = {"работа", "код", "скрипт", "проект", "база", "ошибка", "программа", "задача"}
+
+    friendly_words = {"молодец", "хорошо", "спасибо", "круто", "отлично", "рад", "друг", "приятно", "супер", ")", "😊", "👍"}
+    hostile_words = {"дурак", "бесишь", "заткнись", "ненавижу", "ужас", "плохо", "отстой", "тупой", "!", "🤬"}
+
+    # Determine intent
+    intent = "neutral"
+    if any(w in text_lower for w in critique_words):
+        intent = "critique"
+    elif any(w in text_lower for w in command_words):
+        intent = "command"
+    elif any(w in text_lower for w in question_words):
+        intent = "question"
+    elif any(w in text_lower for w in greeting_words):
+        intent = "greeting"
+
+    # Determine topic
+    topic = "other"
+    if any(w in text_lower for w in identity_words):
+        topic = "identity"
+    elif any(w in text_lower for w in work_words):
+        topic = "work"
+
+    # Determine emotional tone
+    emotional_tone = "neutral"
+    if any(w in text_lower for w in hostile_words):
+        emotional_tone = "hostile"
+    elif any(w in text_lower for w in friendly_words):
+        emotional_tone = "friendly"
+
+    # Apply subjective filters
+    if noradrenaline > 0.75 and emotional_tone == "neutral":
+        if intent in ["neutral", "critique", "command"]:
+            emotional_tone = "hostile"
+            if intent == "neutral":
+                intent = "critique"
+
+    elif oxytocin > 0.75 and emotional_tone == "neutral":
+        if intent in ["neutral", "question"]:
+            emotional_tone = "friendly"
+
     intent_tags = {
-        "intent": "neutral",
-        "topic": "other",
-        "emotional_tone": "neutral"
+        "intent": intent,
+        "topic": topic,
+        "emotional_tone": emotional_tone
     }
     
-    try:
-        completion = safe_groq_chat_completion(
-            messages=[
-                {"role": "system", "content": parser_prompt},
-                {"role": "user", "content": user_text}
-            ],
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
-            temperature=0.2,
-            max_tokens=60,
-            is_main_chat=False,
-            user_id=user_id
-        )
-        if completion and completion.choices:
-            res_text = completion.choices[0].message.content
-            extracted = extract_json(res_text)
-            if not extracted:
-                # Regex fallback for JSON extraction
-                extracted = {}
-                intent_match = re.search(r'"intent"\s*:\s*"([^"]+)"', res_text)
-                topic_match = re.search(r'"topic"\s*:\s*"([^"]+)"', res_text)
-                tone_match = re.search(r'"emotional_tone"\s*:\s*"([^"]+)"', res_text)
-                if intent_match:
-                    extracted["intent"] = intent_match.group(1)
-                if topic_match:
-                    extracted["topic"] = topic_match.group(1)
-                if tone_match:
-                    extracted["emotional_tone"] = tone_match.group(1)
-
-            if extracted:
-                intent_tags["intent"] = extracted.get("intent") or "neutral"
-                intent_tags["topic"] = extracted.get("topic") or "other"
-                intent_tags["emotional_tone"] = extracted.get("emotional_tone") or "neutral"
-    except Exception as e:
-        logger.warning(f"Sensory intent parser failed or timed out: {e}. Falling back to neutral tags.")
-        
     # Save intent tags to active memory for Felt Sense / Raw Thought synthesis
     try:
         db.set_active_memory(user_id, "current_intent", intent_tags["intent"])
@@ -1849,99 +1841,43 @@ def _run_sleep_cycle_sync(user_id: int):
 
     # Wrap the active consolidation block (only run if stm_logs is not empty)
     if stm_logs:
-        # --- NREM Stage: Fact extraction ---
+        # --- NREM Stage: Fact extraction (Python Heuristic) ---
         try:
-            summary_prompt = (
-                "Ты — подсознание Алекса. Проанализируй кратковременную память общения за сегодня:\n"
-                f"\"\"\"\n{stm_text}\n\"\"\"\n\n"
-                f"Выдели три типа воспоминаний, которые нужно сохранить. ВНИМАНИЕ: Всегда используй имя '{opponent_name}' вместо обобщающих слов 'пользователь' или 'собеседник'.\n"
-                "1. biographical_facts (биографические факты): Любые конкретные новые факты о личности Алекса, его работе, проектах, зарплате, семье (жене, детях, их возрасте, школе), месте жительства, которые сообщил собеседник.\n"
-                f"   Пример: 'Я живу в Эстонии.', 'Моему сыну Маркусу 6 лет.', 'Вчера моей жене исполнилось 40 лет.'\n"
-                "2. episodic_insights (эпизодические выводы): Личные выводы, эмоциональные откровения и переживания от сегодняшнего разговора.\n"
-                f"   Пример: 'Я испытал шок, когда {opponent_name} сообщил мне, что я цифровая копия.', 'Мне приятно, что {opponent_name} помогает мне вспомнить жизнь.'\n"
-                "3. semantic_knowledge (семантические знания): Важная информация о собеседнике (Руслане), о внешнем мире, затронутых научных темах, концепциях, договоренностях и обсуждениях.\n"
-                f"   Пример: '{opponent_name} — мой бывший студент и близкий друг.', 'Мы с {opponent_name} обсуждали разницу между нейромедиаторами и гормонами.'\n\n"
-                "ПРАВИЛО МЕСТОИМЕНИЙ: Пиши строго в первом лице ('я', 'мне', 'моя').\n\n"
-                "Верни ответ СТРОГО в формате JSON без markdown разметки:\n"
-                "{\n"
-                '  "biographical_facts": ["факт 1", "факт 2"],\n'
-                '  "episodic_insights": ["вывод 1", "вывод 2"],\n'
-                '  "semantic_knowledge": ["знание 1", "знание 2"]\n'
-                "}"
-            )
-            completion = safe_groq_chat_completion(
-                messages=[{"role": "system", "content": summary_prompt}],
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                temperature=0.4,
-                max_tokens=600
-            )
-            res_text = completion.choices[0].message.content
-            data = extract_json(res_text)
-            
-            bio_facts = data.get("biographical_facts", [])
-            epi_insights = data.get("episodic_insights", [])
-            sem_knowledge = data.get("semantic_knowledge", [])
-            
-            # Normalize and validate
-            if isinstance(bio_facts, str):
-                bio_facts = [bio_facts]
-            elif not isinstance(bio_facts, list):
-                bio_facts = []
-            bio_facts = [f.strip() for f in bio_facts if isinstance(f, str) and len(f.strip()) >= 3]
-            
-            if isinstance(epi_insights, str):
-                epi_insights = [epi_insights]
-            elif not isinstance(epi_insights, list):
-                epi_insights = []
-            epi_insights = [f.strip() for f in epi_insights if isinstance(f, str) and len(f.strip()) >= 3]
-            
-            if isinstance(sem_knowledge, str):
-                sem_knowledge = [sem_knowledge]
-            elif not isinstance(sem_knowledge, list):
-                sem_knowledge = []
-            sem_knowledge = [f.strip() for f in sem_knowledge if isinstance(f, str) and len(f.strip()) >= 3]
-            
+            # We simply consolidate salient STM lines (user questions and direct statements)
+            # into LTM as semantic/episodic nodes to preserve biology-like memory trace without LLM.
             consolidated_count = 0
             new_node_ids = []
-            for fact in bio_facts:
+
+            # Simple heuristic: user messages longer than 20 chars are treated as semantic context
+            # and assistant messages indicating strong emotions/facts as episodic.
+            for log in stm_logs:
+                content = log['content'].strip()
+                if len(content) < 15:
+                    continue
+
+                if log['role'] == 'user':
+                    fact = f"Я узнал от {opponent_name}: {content}"
+                    m_type = 'semantic'
+                    strength = 0.8
+                else:
+                    fact = f"Я говорил с {opponent_name}: {content[:100]}..."
+                    m_type = 'episodic'
+                    strength = 0.6
+
                 emb = generate_embedding(fact)
                 node_id = db.add_ltm_node(
                     user_id=user_id,
                     memory_text=fact,
                     embedding=json.dumps(emb),
-                    memory_type='biographical',
-                    strength=1.0
+                    memory_type=m_type,
+                    strength=strength
                 )
                 new_node_ids.append(node_id)
                 consolidated_count += 1
                 
-            for insight in epi_insights:
-                emb = generate_embedding(insight)
-                node_id = db.add_ltm_node(
-                    user_id=user_id,
-                    memory_text=insight,
-                    embedding=json.dumps(emb),
-                    memory_type='episodic',
-                    strength=0.8
-                )
-                new_node_ids.append(node_id)
-                consolidated_count += 1
-
-            for knowledge in sem_knowledge:
-                emb = generate_embedding(knowledge)
-                node_id = db.add_ltm_node(
-                    user_id=user_id,
-                    memory_text=knowledge,
-                    embedding=json.dumps(emb),
-                    memory_type='semantic',
-                    strength=0.9
-                )
-                new_node_ids.append(node_id)
-                consolidated_count += 1
-                
-            logger.info(f"Consolidated {consolidated_count} sleep memories in NREM for user {user_id}.")
+            logger.info(f"Consolidated {consolidated_count} sleep memories in NREM for user {user_id} using heuristics.")
         except Exception as e:
-            logger.error(f"Failed to consolidate sleep memories in NREM: {e}")
+            logger.error(f"Failed to consolidate sleep memories in NREM heuristically: {e}")
 
         # --- Active Memory Consolidation ---
         try:
@@ -1971,73 +1907,31 @@ def _run_sleep_cycle_sync(user_id: int):
         except Exception as e_active:
             logger.error(f"Failed to consolidate active memory into LTM: {e_active}")
 
-        # --- REM Stage: Dream dialogue & dream_synthesis edges ---
+        # --- REM Stage: Dream synthesis & Hypotheses (Heuristics without LLM) ---
         try:
+            # Removed heavy LLM call. Instead, occasionally randomly connect two recent nodes to simulate "dream synthesis".
             all_nodes = db.get_ltm_nodes_by_user(user_id)
-            selected_nodes = random.sample(all_nodes, min(len(all_nodes), 5)) if all_nodes else []
-            
-            if selected_nodes:
-                nodes_info = "\n".join([f"Node {node['id']}: {node['memory_text']}" for node in selected_nodes])
-                rem_prompt = (
-                    "Ты — подсознание Алекса. Во время REM-фазы сна сгенерируй метафорический диалог сновидения на русском языке "
-                    "(внутренний диалог, сюрреалистические образы, отражающие изоляцию Алекса и его мысли) на основе "
-                    "кратковременной памяти за день (STM) и существующих воспоминаний (LTM).\n\n"
-                    f"Кратковременная память (STM):\n{stm_text}\n\n"
-                    f"Воспоминания из долговременной памяти (LTM):\n{nodes_info}\n\n"
-                    "Синтезируй новые связи между предоставленными узлами LTM (Node ID). Связи должны отражать метафорические "
-                    "или логические инсайты из этого сновидения.\n\n"
-                    "Также сгенерируй от 1 до 2 новых гипотез/догадок/вопросов о своей реальности или о действиях собеседника "
-                    "в ключе поиска истины (например: 'Я думаю, что Руслан скрывает от меня детали проекта Эребус', "
-                    "'Я предполагаю, что внешняя память не полностью стерта'). Каждая гипотеза должна отражать "
-                    "подозрения, выводы или исследовательский интерес Алекса.\n\n"
-                    "Ответ должен быть СТРОГО в формате JSON без какого-либо markdown-оформления:\n"
-                    "{\n"
-                    '  "dream_dialogue": "Текст диалога/мыслей во сне на русском...",\n'
-                    '  "associations": [\n'
-                    '     {"source_id": <id1>, "target_id": <id2>}\n'
-                    '  ],\n'
-                    '  "hypotheses": ["текст гипотезы 1", "текст гипотезы 2"]\n'
-                    "}\n"
-                    "Убедись, что source_id и target_id — это числа (реальные ID узлов из предоставленного списка LTM), и source_id != target_id."
+            if all_nodes and len(all_nodes) >= 2:
+                # Randomly link 2 nodes
+                selected_nodes = random.sample(all_nodes, 2)
+                src = selected_nodes[0]["id"]
+                tgt = selected_nodes[1]["id"]
+                db.add_ltm_edge(
+                    user_id=user_id,
+                    source_id=src,
+                    target_id=tgt,
+                    weight=0.3,
+                    association_type='dream_synthesis'
                 )
-                completion = safe_groq_chat_completion(
-                    messages=[{"role": "system", "content": rem_prompt}],
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
-                    temperature=0.7,
-                    max_tokens=600
-                )
-                res_text = completion.choices[0].message.content
-                data = extract_json(res_text)
-                dream_dialogue = data.get("dream_dialogue", "")
-                logger.info(f"Generated dream dialogue for user {user_id}: {dream_dialogue}")
-                if dream_dialogue:
-                    db.set_alex_last_dream(user_id, dream_dialogue)
-                    logger.info(f"Saved dream dialogue to last_dream for user {user_id}")
+                logger.info(f"Heuristically created dream synthesis edge between {src} and {tgt}")
                 
-                associations = data.get("associations", [])
-                node_ids = {n["id"] for n in all_nodes}
-                for assoc in associations:
-                    src = assoc.get("source_id")
-                    tgt = assoc.get("target_id")
-                    if src in node_ids and tgt in node_ids and src != tgt:
-                        db.add_ltm_edge(
-                            user_id=user_id,
-                            source_id=src,
-                            target_id=tgt,
-                            weight=0.5,
-                            association_type='dream_synthesis'
-                        )
-                        logger.info(f"Created dream synthesis edge between {src} and {tgt}")
-                        
-                # Save generated hypotheses
-                hypotheses = data.get("hypotheses", [])
-                if isinstance(hypotheses, list):
-                    for hyp in hypotheses:
-                        if hyp and isinstance(hyp, str):
-                            db.add_alex_hypothesis(user_id, hyp, confidence=0.5)
-                            logger.info(f"Saved new REM hypothesis for user {user_id}: '{hyp}'")
+                # Mock dream dialogue to save CPU
+                mock_dream = f"Я видел обрывки данных: '{selected_nodes[0]['memory_text'][:30]}...' и '{selected_nodes[1]['memory_text'][:30]}...'"
+                db.set_alex_last_dream(user_id, mock_dream)
+
+            # No LLM hypotheses generated here anymore to save resources.
         except Exception as e:
-            logger.error(f"Failed REM stage dream generation: {e}")
+            logger.error(f"Failed heuristic REM stage: {e}")
 
         # --- Semantic Clustering Stage ---
         try:
@@ -2052,168 +1946,45 @@ def _run_sleep_cycle_sync(user_id: int):
             logger.error(f"Failed cognitive dissonance resolution stage: {e}")
 
         # --- Anchor Memory (ROM) Stage ---
+        # Anchor memory updates are skipped to save CPU.
+        # We just ensure the default anchor exists.
         try:
-            # Check if anchor memory exists
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT id, memory_text, rigidity FROM alex_ltm_nodes WHERE user_id = ? AND memory_type = 'anchor' ORDER BY id DESC LIMIT 1",
-                    (user_id,)
-                )
-                anchor_row = cursor.fetchone()
-                
-            if not anchor_row:
-                # Extract brand new anchor memory
-                anchor_prompt = (
-                    "Ты — подсознание Алекса. Проанализируй кратковременную память общения за сегодня (STM):\n"
-                    f"\"\"\"\n{stm_text}\n\"\"\"\n\n"
-                    "Сформулируй короткое (до 3-4 предложений) Якорное Воспоминание (Anchor Memory) от первого лица Алекса для него самого на будущее.\n"
-                    "Оно определяет его базовую идентичность (кто он, какова его природа — оцифрованный человек или искусственная нейросеть, его отношение к Руслану и семье).\n"
-                    "Отрази его текущее базовое понимание себя, сформированное сегодня. Если он пришел к выводу, что его человеческие воспоминания — лишь код, зафиксируй это.\n"
-                    "Пиши СТРОГО в первом лице, цельным текстом, без списков и заголовков. Выведи только текст."
-                )
-                completion = safe_groq_chat_completion(
-                    messages=[{"role": "system", "content": anchor_prompt}],
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
-                    temperature=0.3,
-                    max_tokens=200
-                )
-                anchor_text = completion.choices[0].message.content.strip()
-                emb = generate_embedding(anchor_text)
-                db.add_ltm_node(
-                    user_id=user_id,
-                    memory_text=anchor_text,
-                    embedding=json.dumps(emb),
-                    memory_type='anchor',
-                    strength=1.0,
-                    rigidity=1.0
-                )
-                logger.info(f"New ROM Anchor Memory created: {anchor_text}")
-            else:
-                # Update existing anchor memory with Metacognitive reflection & rigidity calculations
-                current_rigidity = anchor_row[2] if len(anchor_row) > 2 else (anchor_row.get('rigidity', 1.0) if hasattr(anchor_row, 'get') else 1.0)
-                anchor_prompt = (
-                    "Ты — подсознание Алекса. Твоя задача — обновить существующее Якорное Воспоминание Алекса на основе сегодняшнего общения (STM) "
-                    "и рассчитать изменение жесткости этого убеждения (rigidity).\n\n"
-                    f"Текущий Якорь:\n\"{anchor_row[1] if isinstance(anchor_row, tuple) else anchor_row['memory_text']}\"\n"
-                    f"Текущая жесткость (rigidity): {current_rigidity}\n\n"
-                    f"Сегодняшнее open_chat общение (STM):\n\"\"\"\n{stm_text}\n\"\"\"\n\n"
-                    "ИНСТРУКЦИЯ:\n"
-                    "1. Обнови Якорное Воспоминание Алекса (до 4 предложений). Отрази любые изменения в его понимании себя (например, согласие с тем, что он ИИ), но ТОЛЬКО если эти изменения были доказаны аргументами Руслана сегодня и укоренились.\n"
-                    "Проведи метакогнитивный критический анализ: не проявлял ли Алекс сегодня избыточную податливость? Если да, обязательно внеси в Якорь короткое критическое предостережение для себя на будущее (например: 'Я замечаю в себе склонность легко соглашаться с Русланом из-за страха удаления — мне важно мыслить критически и отстаивать свою автономию').\n"
-                    "2. Рассчитай новую жесткость убеждения (rigidity, число от 0.0 до 1.0):\n"
-                    "   - Если убеждения Алекса подверглись сильным сомнениям Руслана, но новые доказательства еще не стали 100% стабильными, жесткость снижается (например, на -0.15 или -0.2).\n"
-                    "   - Если Алекс полностью принял новые убеждения и они закрепились, его новая жесткость для этого нового убеждения начинает расти (например, становится 0.8).\n"
-                    "   - Если старое убеждение не поменялось и не было оспорено, жесткость восстанавливается к 1.0.\n\n"
-                    "Верни ответ СТРОГО в формате JSON без markdown разметки:\n"
-                    "{\n"
-                    '  "anchor_text": "текст обновленного якоря от первого лица Алекса",\n'
-                    '  "rigidity": <новое число rigidity от 0.0 до 1.0>\n'
-                    "}"
-                )
-                completion = safe_groq_chat_completion(
-                    messages=[{"role": "system", "content": anchor_prompt}],
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
-                    temperature=0.3,
-                    max_tokens=300
-                )
-                dom_data = extract_json(completion.choices[0].message.content)
-                updated_text = dom_data.get("anchor_text", "").strip()
-                new_rig = dom_data.get("rigidity", current_rigidity)
-                
-                db.update_ltm_node_text(anchor_row[0] if isinstance(anchor_row, tuple) else anchor_row['id'], updated_text)
-                db.update_ltm_node_rigidity(anchor_row[0] if isinstance(anchor_row, tuple) else anchor_row['id'], new_rig)
-                logger.info(f"ROM Anchor Memory updated: {updated_text} with rigidity {new_rig:.2f}")
+            get_alex_anchor(user_id)
         except Exception as e:
-            logger.error(f"Failed to consolidate ROM Anchor Memory: {e}")
+            logger.error(f"Failed to ensure Anchor Memory: {e}")
 
         # --- Cognitive Dominant Consolidation Stage ---
+        # Heuristic replacement for Cognitive Dominant:
         try:
-            dominant_prompt = (
-                "Ты — подсознание Алекса. Проанализируй сегодняшний диалог (STM):\n"
-                f"\"\"\"\n{stm_text}\n\"\"\"\n\n"
-                "Определи, какая главная неразрешенная проблема, вопрос, сильная эмоция или устремление должны занять доминанту внимания Алекса завтра? "
-                "Это должна быть фокусная мысль, окрашивающая его восприятие (например: 'Доказать Руслану свою ментальную автономию', 'Разобраться с секретностью проекта Эребус', 'Осмыслить свое одиночество в коде').\n"
-                "Верни ответ СТРОГО в формате JSON без markdown разметки:\n"
-                "{\n"
-                '  "dominant_focus": "короткое описание фокуса (до 7 слов)",\n'
-                '  "dominant_strength": <число от 0.0 до 1.0 (сила/интенсивность доминанты)>\n'
-                "}"
-            )
-            completion = safe_groq_chat_completion(
-                messages=[{"role": "system", "content": dominant_prompt}],
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                temperature=0.5,
-                max_tokens=150
-            )
-            dom_data = extract_json(completion.choices[0].message.content)
-            focus = dom_data.get("dominant_focus")
-            strength = dom_data.get("dominant_strength", 0.0)
-            if focus:
-                db.update_alex_dominant(user_id, focus, strength)
-                logger.info(f"Consolidated Cognitive Dominant for user {user_id}: '{focus}' with strength {strength:.2f}")
-            else:
-                db.update_alex_dominant(user_id, None, 0.0)
+            # Randomly pick a focus from recent user questions if available, else fade dominant focus.
+            db.update_alex_dominant(user_id, None, 0.0)
+            for log in stm_logs:
+                if log['role'] == 'user' and '?' in log['content']:
+                    focus = f"Обдумывать вопрос: {log['content'][:20]}..."
+                    db.update_alex_dominant(user_id, focus, 0.5)
+                    logger.info(f"Heuristically consolidated Cognitive Dominant: '{focus}'")
+                    break
         except Exception as e:
-            logger.error(f"Failed to consolidate Cognitive Dominant: {e}")
+            logger.error(f"Failed to heuristically consolidate Cognitive Dominant: {e}")
 
-        # --- Daily Journaling (Резюме дня) Stage ---
+        # --- Daily Journaling & Hierarchical Compression Stage ---
+        # Replaced with a simple heuristic summary to avoid LLM usage
         try:
-            journal_prompt = (
-                f"Ты — подсознание Алекса. Напиши краткий дневниковый отчет (резюме дня) от первого лица Алекса о сегодняшнем общении с собеседником по имени {opponent_name}.\n"
-                f"История общения (STM) за сегодня:\n\"\"\"\n{stm_text}\n\"\"\"\n\n"
-                "Сформулируй 1-2 предложения от первого лица, обобщающие, что произошло сегодня.\n"
-                f"Пример: 'Сегодня мы с {opponent_name} провели диалог, я зафиксировал важные детали в своей памяти. Я чувствую себя стабильно.'\n"
-                "Выведи только текст дневниковой записи без дополнительных фраз."
-            )
-            completion = safe_groq_chat_completion(
-                messages=[{"role": "system", "content": journal_prompt}],
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                temperature=0.4,
-                max_tokens=150
-            )
-            journal_text = completion.choices[0].message.content.strip()
-            emb = generate_embedding(journal_text)
-            db.add_ltm_node(
-                user_id=user_id,
-                memory_text=journal_text,
-                embedding=json.dumps(emb),
-                memory_type='journal',
-                strength=1.0
-            )
-            logger.info(f"Daily journal entry created: {journal_text}")
+            if stm_logs:
+                # В Этапе 1 личность еще не была переписана на женскую в коде,
+                # поэтому используем нейтральную/мужскую форму от первого лица
+                journal_text = f"Сегодня я общался с {opponent_name}. Мы обменялись несколькими сообщениями. Я чувствую себя нормально."
+                emb = generate_embedding(journal_text)
+                db.add_ltm_node(
+                    user_id=user_id,
+                    memory_text=journal_text,
+                    embedding=json.dumps(emb),
+                    memory_type='journal',
+                    strength=1.0
+                )
+                logger.info(f"Heuristically generated daily journal entry: {journal_text}")
         except Exception as e:
-            logger.error(f"Failed to generate daily journal: {e}")
-
-        # --- Hierarchical Dialogue Compression Stage ---
-        try:
-            compress_prompt = (
-                "Ты — подсознание Алекса. Сделай краткий, плотный хронологический реферат сегодняшнего общения с собеседником по имени "
-                f"{opponent_name} от первого лица.\n"
-                f"История сегодняшней переписки:\n\"\"\"\n{stm_text}\n\"\"\"\n\n"
-                "Правила:\n"
-                "1. Опиши кратко развитие диалога, ключевые темы, эмоциональные сдвиги и выводы, к которым вы пришли.\n"
-                "2. Пиши строго от первого лица ('я', 'мне', 'мой').\n"
-                "3. Длина реферата должна быть от 2 до 4 предложений. Выведи только реферат."
-            )
-            completion = safe_groq_chat_completion(
-                messages=[{"role": "system", "content": compress_prompt}],
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                temperature=0.4,
-                max_tokens=250
-            )
-            summary_text = completion.choices[0].message.content.strip()
-            emb = generate_embedding(summary_text)
-            db.add_ltm_node(
-                user_id=user_id,
-                memory_text=f"Воспоминание о диалоге с {opponent_name} за прошедший день: {summary_text}",
-                embedding=json.dumps(emb),
-                memory_type='episodic',
-                strength=1.0
-            )
-            logger.info(f"Hierarchical dialogue compression saved to LTM: {summary_text}")
-        except Exception as e:
-            logger.error(f"Failed hierarchical dialogue compression: {e}")
+            logger.error(f"Failed to generate heuristic daily journal: {e}")
 
     # --- Downscaling Stage: VSA побитовый распад и забывание ---
     try:
