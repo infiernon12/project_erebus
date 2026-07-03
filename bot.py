@@ -934,10 +934,12 @@ class CognitionEngine:
 
             min_idle_mins = 99999.0
             
+            # Fetch all emotions efficiently at once
+            all_emotions_batch = db.get_alex_emotions_batch(all_user_ids)
 
             for user_id in all_user_ids:
                 try:
-                    emotions = db.get_alex_emotions(user_id)
+                    emotions = all_emotions_batch.get(user_id)
                     if not emotions or not emotions.get("last_interaction"):
                         continue
                         
