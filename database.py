@@ -219,12 +219,6 @@ def register_user(user_id: int, username: str = None, opponent_name: str = None)
         conn.commit()
     return True
 
-def set_gender(user_id: int, gender: str):
-    pass
-
-def set_active_vibe(user_id: int, vibe: str):
-    pass
-
 def get_opponent_name(user_id: int) -> str:
     user = get_user(user_id)
     if user and user["opponent_name"]:

@@ -99,8 +99,6 @@ async def run_tests():
         conn.commit()
         
     db.register_user(USER_ID, "test_ruslan")
-    db.set_gender(USER_ID, "male")
-    db.set_active_vibe(USER_ID, "experiment_chat")
     
     # ----------------------------------------------------
     # TEST 1: SQLite schema existence (R1)
