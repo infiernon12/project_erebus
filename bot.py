@@ -925,6 +925,11 @@ class CognitionEngine:
                 logger.error(f"Error fetching active users in Tick Loop: {e}")
                 all_user_ids = []
                 
+            try:
+                users_with_stm = db.get_users_with_pending_stm(user_ids=all_user_ids)
+            except Exception as e:
+                logger.error(f"Error fetching users with pending STM: {e}")
+                users_with_stm = set()
 
             min_idle_mins = 99999.0
             
@@ -982,13 +987,7 @@ class CognitionEngine:
                         
 
                     # Check if this user has pending STM logs
-                    has_pending_stm = False
-                    try:
-                        pending = db.get_alex_stm(user_id, limit=1)
-                        if pending:
-                            has_pending_stm = True
-                    except Exception as stm_err:
-                        logger.warning(f"Error checking pending STM for {user_id}: {stm_err}")
+                    has_pending_stm = user_id in users_with_stm
                         
 
                     should_sleep = False
