@@ -948,7 +948,7 @@ def clear_active_memory(user_id: int):
 def save_alex_emotions(user_id: int, emotions: dict):
     global_id = user_id if TESTING else GLOBAL_ALEX_ID
     with get_connection() as conn:
-        # Обновляем глобальное эмоциональное ядро Алекса
+        # Обновляем глобальное эмоциональное ядро Алисы
         conn.execute(
             """UPDATE alex_emotions 
                SET dopamine = ?, serotonin = ?, acetylcholine = ?, gaba = ?, glutamate = ?, endorphins = ?, fatigue = ?
